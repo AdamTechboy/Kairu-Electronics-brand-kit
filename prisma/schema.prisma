@@ -1,0 +1,137 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Owner account (single-business deployment; more users can be added later)
+model User {
+  id            String          @id @default(cuid())
+  email         String          @unique
+  name          String?
+  passwordHash  String
+  role          String          @default("owner")
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  brandSettings BrandSettings?
+  projects      DesignProject[]
+  assets        Asset[]
+  products      Product[]
+  exports       ExportRecord[]
+}
+
+// Persistent business profile + brand identity settings
+model BrandSettings {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  businessName     String   @default("Muhammad Kairu Electronics")
+  businessCategory String   @default("Electronics Retail & Solar Energy")
+  description      String   @default("")
+  shortDescription String   @default("")
+  tagline          String   @default("")
+  address          String   @default("")
+  phones           String   @default("[]") // JSON array of strings
+  email            String   @default("")
+  website          String   @default("")
+  socials          String   @default("[]") // JSON array of {label,handle}
+  openingHours     String   @default("")
+  extraInfo        String   @default("")
+  logoProjectId    String? // id of the DesignProject used as the official logo
+  palette          String   @default("{}") // JSON Palette
+  typography       String   @default("{}") // JSON Typography
+  updatedAt        DateTime @updatedAt
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Editable design project (logo, letterhead, card, flyer...) stored as structured JSON, never flattened
+model DesignProject {
+  id         String           @id @default(cuid())
+  userId     String
+  name       String
+  type       String // logo | letterhead | business-card | complimentary-card | flyer | social-post | document | other
+  doc        String // JSON DesignDocument (editable source of truth)
+  preview    String           @default("") // small PNG data-url thumbnail
+  isTemplate Boolean          @default(false)
+  templateOf String? // which builtin style it came from
+  archived   Boolean          @default(false)
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  versions   ProjectVersion[]
+  exports    ExportRecord[]
+  index      Int              @default(0)
+
+  @@index([userId, updatedAt])
+}
+
+// Revision history: snapshots taken on save / before AI or big changes
+model ProjectVersion {
+  id        String        @id @default(cuid())
+  projectId String
+  label     String        @default("Saved version")
+  doc       String // JSON DesignDocument snapshot
+  createdAt DateTime      @default(now())
+  project   DesignProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+}
+
+// Uploaded media assets (images) stored as data-urls in SQLite with metadata
+model Asset {
+  id        String   @id @default(cuid())
+  userId    String
+  projectId String? // optional association
+  kind      String   @default("image") // image | logo-reference | product | background
+  filename  String
+  mimeType  String
+  size      Int // bytes of decoded data
+  width     Int      @default(0)
+  height    Int      @default(0)
+  data      String // data-url payload
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+// Reusable product catalogue
+model Product {
+  id            String   @id @default(cuid())
+  userId        String
+  name          String
+  category      String   @default("")
+  description   String   @default("")
+  price         String   @default("") // kept as string to allow "" or formatted values
+  availability  String   @default("In Stock")
+  stockRef      String   @default("")
+  notes         String   @default("")
+  imageAssetIds String   @default("[]") // JSON array of Asset ids
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, updatedAt])
+}
+
+// Export history
+model ExportRecord {
+  id          String         @id @default(cuid())
+  userId      String
+  projectId   String?
+  projectName String         @default("")
+  projectType String         @default("")
+  format      String // pdf | png | jpg | svg | zip | print
+  fileName    String
+  width       Int            @default(0)
+  height      Int            @default(0)
+  scale       String         @default("1")
+  paperSize   String         @default("")
+  createdAt   DateTime       @default(now())
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project     DesignProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+}
