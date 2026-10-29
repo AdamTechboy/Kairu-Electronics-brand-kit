@@ -179,7 +179,7 @@ export function ProductLibraryView() {
   const downloadCsvTemplate = () => {
     const headers = ['name', 'category', 'description', 'price', 'availability', 'stockRef', 'notes']
     const example = ['Example product', 'Accessories', 'Short product description', '25000', 'In Stock', 'SKU-001', 'Optional notes']
-    const blob = new Blob(['\\uFEFF' + [headers, example].map((row) => row.map(csvCell).join(',')).join('\\r\\n')], { type: 'text/csv;charset=utf-8;' })
+    const blob = new Blob(['\uFEFF' + [headers, example].map((row) => row.map(csvCell).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
