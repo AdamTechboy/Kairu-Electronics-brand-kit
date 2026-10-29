@@ -85,7 +85,7 @@ export function DocumentsView() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-bold"><ReceiptText className="h-6 w-6 text-amber-600" /> Documents &amp; Receipts</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Write letters, invoices, receipts, quotations and delivery notes. Add customer and delivery details for orders going to other cities or states, then edit or download a print-ready PDF.</p>
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Write letters, custom documents, invoices, receipts, quotations and delivery notes. Add customer and delivery details for orders going to other cities or states, then edit or download a print-ready PDF.</p>
         </div>
         <Button variant="outline" className="gap-2" onClick={() => setForm(freshDocument(form.kind))}><FileText className="h-4 w-4" /> New document</Button>
       </div>
@@ -116,7 +116,7 @@ export function DocumentsView() {
               <div className="space-y-1.5"><Label>Email (optional)</Label><Input type="email" value={form.customerEmail} onChange={(e) => set('customerEmail', e.target.value)} placeholder="name@example.com" /></div>
               <div className="space-y-1.5 sm:col-span-2"><Label>Delivery address / street</Label><Input value={form.customerAddress} onChange={(e) => set('customerAddress', e.target.value)} placeholder="House number, street, area" /></div>
               <div className="space-y-1.5 sm:col-span-2"><Label>City and state</Label><Input value={form.destinationCityState} onChange={(e) => set('destinationCityState', e.target.value)} placeholder="e.g. Gombe, Gombe State" /></div>
-              {isLetter && <><div className="space-y-1.5 sm:col-span-2"><Label>Subject / reference</Label><Input value={form.subject} onChange={(e) => set('subject', e.target.value)} placeholder="Subject of letter" /></div><div className="space-y-1.5 sm:col-span-2"><Label>Letter content</Label><Textarea rows={12} value={form.body} onChange={(e) => set('body', e.target.value)} placeholder="Write your full letter here. Long letters are split over A4 pages." /></div></>}
+              {isLetter && <><div className="space-y-1.5 sm:col-span-2"><Label>Subject / reference</Label><Input value={form.subject} onChange={(e) => set('subject', e.target.value)} placeholder="Subject of letter" /></div><div className="space-y-1.5 sm:col-span-2"><Label>{form.kind === 'custom' ? 'Document content' : 'Letter content'}</Label><Textarea rows={12} value={form.body} onChange={(e) => set('body', e.target.value)} placeholder={form.kind === 'custom' ? 'Type any text you want to print: notices, statements, agreements, memos, or other business documents.' : 'Write your full letter here. Long letters are split over A4 pages.'} /></div></>}
             </CardContent>
           </Card>
 
