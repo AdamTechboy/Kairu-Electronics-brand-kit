@@ -41,6 +41,7 @@ export function ProductLibraryView() {
   const [dialog, setDialog] = useState(false)
   const [draft, setDraft] = useState<DraftProduct>(EMPTY)
   const [saving, setSaving] = useState(false)
+  const [uploadingImages, setUploadingImages] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<Product | null>(null)
   const [imgUrls, setImgUrls] = useState<Record<string, string>>({})
   const [cropTarget, setCropTarget] = useState<{ id: string; index: number; src: string } | null>(null)
@@ -79,31 +80,46 @@ export function ProductLibraryView() {
   }
 
   const handleImage = async (files: FileList | null) => {
-    if (!files?.length) return
+    if (!files?.length || uploadingImages) return
     const chosen = Array.from(files).slice(0, Math.max(0, 6 - draft.imageAssetIds.length))
     if (!chosen.length) {
       toast.error('A product can have up to 6 photos. Remove one before adding more.')
       return
     }
+
+    setUploadingImages(true)
+    const uploaded: { id: string; dataUrl: string }[] = []
+    const failures: string[] = []
     try {
-      const uploaded: { id: string; dataUrl: string }[] = []
+      // Keep successful uploads attached even if a later file in the batch fails.
       for (const file of chosen) {
-        const compressed = await compressImageFile(file, 1200)
-        const { asset } = await assetApi.upload({
-          filename: file.name,
-          mimeType: compressed.mimeType,
-          dataUrl: compressed.dataUrl,
-          kind: 'product',
-          width: compressed.width,
-          height: compressed.height,
-        })
-        uploaded.push({ id: asset.id, dataUrl: compressed.dataUrl })
+        try {
+          const compressed = await compressImageFile(file, 1200)
+          const { asset } = await assetApi.upload({
+            filename: file.name,
+            mimeType: compressed.mimeType,
+            dataUrl: compressed.dataUrl,
+            kind: 'product',
+            width: compressed.width,
+            height: compressed.height,
+          })
+          uploaded.push({ id: asset.id, dataUrl: compressed.dataUrl })
+        } catch {
+          failures.push(file.name)
+        }
       }
-      setDraft((d) => ({ ...d, imageAssetIds: [...d.imageAssetIds, ...uploaded.map((x) => x.id)].slice(0, 6) }))
-      setImgUrls((m) => ({ ...m, ...Object.fromEntries(uploaded.map((x) => [x.id, x.dataUrl])) }))
-      toast.success(`${uploaded.length} photo${uploaded.length === 1 ? '' : 's'} attached to the product.`)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Upload failed')
+
+      if (uploaded.length) {
+        setDraft((d) => ({ ...d, imageAssetIds: [...d.imageAssetIds, ...uploaded.map((x) => x.id)].slice(0, 6) }))
+        setImgUrls((m) => ({ ...m, ...Object.fromEntries(uploaded.map((x) => [x.id, x.dataUrl])) }))
+      }
+      if (failures.length) {
+        toast.error(uploaded.length + ' photo(s) uploaded; ' + failures.length + ' failed: ' + failures.join(', '))
+      } else {
+        toast.success(uploaded.length + ' photo(s) attached to the product.')
+      }
+    } finally {
+      setUploadingImages(false)
     }
   }
 
@@ -196,7 +212,7 @@ export function ProductLibraryView() {
       )}
 
       {/* dialog */}
-      <Dialog open={dialog} onOpenChange={setDialog}>
+      <Dialog open={dialog} onOpenChange={(nextOpen) => { if (!nextOpen && uploadingImages) return; setDialog(nextOpen) }}>
         <DialogContent className="max-h-[90dvh] max-w-lg overflow-y-auto">
           <DialogHeader><DialogTitle>{draft.id ? 'Edit product' : 'New product'}</DialogTitle></DialogHeader>
           <div className="space-y-3">
@@ -241,7 +257,7 @@ export function ProductLibraryView() {
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <Label>Product photos ({draft.imageAssetIds.length}/6)</Label>
-                <Button variant="outline" size="sm" className="gap-1.5" disabled={draft.imageAssetIds.length >= 6} onClick={() => fileRef.current?.click()}><Upload className="h-3.5 w-3.5" /> Add photos</Button>
+                <Button variant="outline" size="sm" className="gap-1.5" disabled={uploadingImages || draft.imageAssetIds.length >= 6} onClick={() => fileRef.current?.click()}>{uploadingImages ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />} {uploadingImages ? 'Uploading…' : 'Add photos'}</Button>
               </div>
               <p className="text-xs text-muted-foreground">The first photo is the primary image. Use the arrows to reorder photos. Removing a photo only detaches it from this product.</p>
               <input ref={fileRef} type="file" multiple accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={(e) => { void handleImage(e.target.files); e.currentTarget.value = '' }} />
@@ -266,7 +282,7 @@ export function ProductLibraryView() {
                 <div className="flex items-center gap-3 rounded-lg border border-dashed p-4 text-sm text-muted-foreground"><Package className="h-6 w-6" /> No photos added yet.</div>
               )}
             </div>
-            <Button className="w-full bg-[#1F2A44] hover:bg-[#2a3a5c]" onClick={() => void save()} disabled={saving}>
+            <Button className="w-full bg-[#1F2A44] hover:bg-[#2a3a5c]" onClick={() => void save()} disabled={saving || uploadingImages}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null} {draft.id ? 'Save changes' : 'Add product'}
             </Button>
           </div>
