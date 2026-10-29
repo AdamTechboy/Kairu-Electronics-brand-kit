@@ -30,9 +30,10 @@ export async function POST(req: Request) {
 
   try {
     const inputBuffer = Buffer.from(match[1], 'base64')
-    const inputMeta = await sharp(inputBuffer, { limitInputPixels: 40_000_000 }).metadata()
-    if (!inputMeta.width || !inputMeta.height || inputMeta.width * inputMeta.height > 40_000_000) {
-      return fail('This image is too large to process safely. Please choose a smaller image.', 413)
+    const MAX_PIXELS = 16_000_000
+    const inputMeta = await sharp(inputBuffer, { limitInputPixels: MAX_PIXELS }).metadata()
+    if (!inputMeta.width || !inputMeta.height || inputMeta.width * inputMeta.height > MAX_PIXELS) {
+      return fail('This image is too large to process safely. Please choose a smaller image (maximum 16 megapixels).', 413)
     }
 
     let candidate = inputBuffer
@@ -54,7 +55,7 @@ export async function POST(req: Request) {
       console.warn('[ai/remove-background] AI fallback to edge-connected matte removal:', err instanceof Error ? err.message : 'unknown error')
     }
 
-    const decoded = await sharp(candidate, { limitInputPixels: 40_000_000 }).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+    const decoded = await sharp(candidate, { limitInputPixels: 16_000_000 }).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
     const width = decoded.info.width
     const height = decoded.info.height
     if (!width || !height || decoded.info.channels !== 4) return fail('The image service returned an unsupported image.', 502)
