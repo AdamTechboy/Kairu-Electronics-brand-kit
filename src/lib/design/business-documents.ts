@@ -1,7 +1,7 @@
 import { formatNaira, type BrandSettings } from '@/lib/brand'
 import { el, newPage, type DesignDocument, type DesignElement } from '@/lib/design/types'
 
-export type BusinessDocumentKind = 'letter' | 'invoice' | 'receipt' | 'quotation' | 'delivery-note'
+export type BusinessDocumentKind = 'letter' | 'custom' | 'invoice' | 'receipt' | 'quotation' | 'delivery-note'
 
 export interface BusinessDocumentItem {
   description: string
@@ -36,6 +36,7 @@ export interface BusinessDocumentInput {
 
 export const BUSINESS_DOCUMENT_LABELS: Record<BusinessDocumentKind, string> = {
   letter: 'Letter',
+  custom: 'Custom Document',
   invoice: 'Invoice',
   receipt: 'Receipt',
   quotation: 'Quotation',
@@ -84,7 +85,7 @@ function rect(name: string, x: number, y: number, w: number, h: number, fill: st
   return el('rect', { name, x, y, w, h, fill, stroke: stroke ?? undefined, strokeWidth: stroke ? 1 : undefined, radius: 4 })
 }
 
-function addHeader(elements: DesignElement[], brand: BrandSettings, logoDataUrl: string | null, title: string, input: BusinessDocumentInput, pageIndex: number, pageCount: number) {
+function addHeader(elements: DesignElement[], brand: BrandSettings, logoDataUrl: string | null, title: string, input: BusinessDocumentInput) {
   const navy = brand.palette.primary || '#1F2A44'
   const amber = brand.palette.secondary || '#F5A623'
   if (logoDataUrl) elements.push(el('image', { name: 'Official business logo', meta: { placeholder: 'logo' }, src: logoDataUrl, x: 48, y: 28, w: 66, h: 66, fit: 'contain', radius: 0 }))
@@ -99,7 +100,6 @@ function addHeader(elements: DesignElement[], brand: BrandSettings, logoDataUrl:
   if (input.dueDate && ['invoice', 'quotation'].includes(input.kind)) {
     elements.push(text('Due date', `Due: ${input.dueDate}`, 490, 180, 254, 18, 10, '#333B47', 400, 'right'))
   }
-  if (pageCount > 1) elements.push(text('Page number', `Page ${pageIndex + 1} of ${pageCount}`, 570, 1070, 174, 15, 8, '#7A808A', 400, 'right'))
 }
 
 function addCustomerBlock(elements: DesignElement[], input: BusinessDocumentInput, top = 205) {
@@ -178,10 +178,10 @@ export function buildBusinessDocument(input: BusinessDocumentInput, brand: Brand
     elements.push(text('Footer note', note, 48, 1051, 698, 24, 8.5, '#777E89', 400, 'center'))
   }
 
-  if (input.kind === 'letter') {
+  if (input.kind === 'letter' || input.kind === 'custom') {
     const lines = wrapLines(input.body || 'Write the body of your letter here.', 98)
     const firstCapacity = 32
-    const otherCapacity = 44
+    const otherCapacity = 38
     const chunks: string[][] = []
     chunks.push(lines.slice(0, firstCapacity))
     let offset = firstCapacity
@@ -189,7 +189,7 @@ export function buildBusinessDocument(input: BusinessDocumentInput, brand: Brand
     if (!chunks.length) chunks.push([''])
     chunks.forEach((chunk, index) => {
       const page = newPage(index ? `Letter — page ${index + 1}` : 'Letter', '#ffffff')
-      addHeader(page.elements, brand, logoDataUrl, title, normalized, index, chunks.length)
+      addHeader(page.elements, brand, logoDataUrl, title, normalized)
       if (index === 0) {
         page.elements.push(text('Recipient', `To: ${input.customerName || ''}`, 50, 200, 694, 24, 12, '#252C36', 600))
         if (input.customerAddress || input.destinationCityState || input.customerEmail) {
@@ -201,9 +201,9 @@ export function buildBusinessDocument(input: BusinessDocumentInput, brand: Brand
       const bodyText = chunk.join('\n')
       page.elements.push(el('text', { name: index ? `Letter body page ${index + 1}` : 'Letter body', x: 50, y: startY, w: 694, h: Math.max(30, chunk.length * 18.5), text: bodyText, fontFamily: brand.typography.bodyFont || 'Arial', fontSize: 12, lineHeight: 1.5, fill: '#202630', align: 'left' }))
       if (index === chunks.length - 1) {
-        const closingY = Math.min(965, startY + chunk.length * 18.5 + 26)
-        page.elements.push(text('Letter closing', 'Yours faithfully,', 50, closingY, 300, 20, 11, '#252C36'))
-        if (input.signerName) page.elements.push(text('Letter signature', input.signerName, 50, closingY + 42, 320, 22, 12, '#1F2A44', 700))
+        const closingY = Math.min(955, startY + chunk.length * 18.5 + 26)
+        if (input.kind === 'letter') page.elements.push(text('Letter closing', 'Yours faithfully,', 50, closingY, 300, 20, 11, '#252C36'))
+        if (input.signerName) page.elements.push(text(input.kind === 'letter' ? 'Letter signature' : 'Document signature', input.signerName, 50, closingY + (input.kind === 'letter' ? 42 : 8), 320, 22, 12, '#1F2A44', 700))
       }
       addFooter(page.elements)
       pages.push(page)
@@ -217,7 +217,7 @@ export function buildBusinessDocument(input: BusinessDocumentInput, brand: Brand
     if (!chunks.length) chunks.push([{ description: '', quantity: '', unitPrice: '' }])
     chunks.forEach((chunk, index) => {
       const page = newPage(index ? `${title} — page ${index + 1}` : title, '#ffffff')
-      addHeader(page.elements, brand, logoDataUrl, title, normalized, index, chunks.length)
+      addHeader(page.elements, brand, logoDataUrl, title, normalized)
       addCustomerBlock(page.elements, normalized, 205)
       if (index === 0 && (input.deliveryMethod || input.shippingReference || input.paymentMethod)) {
         const info = [
