@@ -18,7 +18,12 @@ async function getSecretKey(): Promise<Uint8Array> {
   if (process.env.AUTH_SECRET && process.env.AUTH_SECRET.length >= 16) {
     return new TextEncoder().encode(process.env.AUTH_SECRET)
   }
-  // File-based fallback secret (dev / simple deployments)
+  // Production instances must share a stable secret; ephemeral filesystem secrets
+  // would invalidate sessions across serverless instances and cold starts.
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('AUTH_SECRET must be configured in production (use a stable random secret of at least 16 characters).')
+  }
+  // File-based fallback for local development only.
   const secretPath = path.join(process.cwd(), 'db', '.auth-secret')
   try {
     const existing = await readFile(secretPath, 'utf8')
