@@ -286,7 +286,7 @@ export function ProductLibraryView() {
             const dataUrl = result.dataUrl
             const mimeType = dataUrl.startsWith('data:image/png') ? 'image/png' : 'image/jpeg'
             const { asset } = await assetApi.upload({
-              filename: `product-photo-cropped-${Date.now()}.png`,
+              filename: `product-photo-cropped-${Date.now()}.${mimeType === 'image/png' ? 'png' : 'jpg'}`,
               mimeType,
               dataUrl,
               kind: 'product',
