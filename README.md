@@ -28,7 +28,7 @@ A single-tenant brand kit and design studio for **Muhammad Kairu Electronics** (
 | Language | TypeScript 5 |
 | UI | React 19, Tailwind CSS 4, shadcn/ui (Radix primitives), lucide-react, framer-motion |
 | State / data fetching | zustand, @tanstack/react-query |
-| Database | SQLite via Prisma 6 (`db/custom.db`) |
+| Database | PostgreSQL via Prisma 6 (Prisma Postgres on Vercel) |
 | Auth | Custom JWT sessions (jose, HS256) + bcryptjs — httpOnly cookie **and** `Authorization: Bearer` fallback (works in embedded frames / cookie-blocking browsers), 30-day sliding expiry, per-IP login rate limiting |
 | Design engine | Custom SVG-string renderer (`src/lib/design/svg.ts`) — single renderer for editor, thumbnails and all exports |
 | Exports | jsPDF + svg2pdf.js (vector PDF), canvas raster (PNG/JPG), JSZip (brand kit), qrcode (QR elements), browser print |
@@ -48,8 +48,8 @@ bun install
 cp .env.example .env
 #    then edit .env (see "Environment variables" below)
 
-# 3. Create/push the SQLite schema
-bun run db:push
+# 3. Apply committed PostgreSQL migrations
+bun run db:migrate:deploy
 
 # 4. Run the dev server
 bun run dev          # http://localhost:3000 (logs are tee'd to dev.log)
@@ -61,12 +61,12 @@ bun run dev          # http://localhost:3000 (logs are tee'd to dev.log)
 
 | Variable | Required | Default / fallback | Purpose |
 | --- | --- | --- | --- |
-| `DATABASE_URL` | Yes | — | Prisma connection string. SQLite for local dev: `file:./db/custom.db` |
-| `AUTH_SECRET` | Recommended | Auto-generated file at `db/.auth-secret` (0600 permissions) | Secret used to sign session JWTs. Use **32+ random characters**, e.g. `openssl rand -hex 32`. If unset, a 32-byte secret is generated once and stored in `db/.auth-secret` |
+| `DATABASE_URL` | Yes | — | PostgreSQL connection string from Prisma Postgres or your PostgreSQL provider |
+| `AUTH_SECRET` | **Required in production** | None in production; development can use `db/.auth-secret` | Stable secret used to sign session JWTs. Set a random value of 32+ characters, e.g. `openssl rand -hex 32`. |
 | `NODE_ENV` | Auto | `development` / `production` | Set by the scripts; in production the session cookie gets the `secure` flag |
 | `PORT` | No | `3000` | Port used by the production standalone server (`bun run start`) |
 
-> **Path note:** Prisma resolves *relative* SQLite paths against the location of `prisma/schema.prisma`. If the database file ends up in the wrong place, use an absolute path (e.g. `DATABASE_URL=file:/home/z/my-project/db/custom.db`), which is what this deployment's `.env` does.
+Production uses PostgreSQL, not a file-backed SQLite database. On Vercel, connect the Prisma Postgres integration and ensure `DATABASE_URL` is available in Production and Preview. Set `AUTH_SECRET` as a sensitive environment variable in every environment, then redeploy. Never commit either secret.
 
 See `.env.example` for a commented template.
 
@@ -78,8 +78,10 @@ See `.env.example` for a commented template.
 | `bun run build` | `next build` → standalone output; copies `.next/static` and `public/` into `.next/standalone/` |
 | `bun run start` | `NODE_ENV=production bun .next/standalone/server.js` (honours `PORT`), output tee'd to `server.log` |
 | `bun run lint` | ESLint over the repository |
-| `bun run db:push` | `prisma db push --accept-data-loss` — pushes `prisma/schema.prisma` to SQLite |
+| `bun run db:push` | Development-only convenience command; **do not use for production schema changes** |
 | `bun run db:generate` | Regenerate the Prisma client |
+| `bun run db:migrate:deploy` | Apply committed PostgreSQL migrations to the configured database |
+| `bun run vercel-build` | Apply migrations, then build the app (Vercel build command) |
 
 ## API Overview
 
@@ -105,13 +107,13 @@ All endpoints require a session except `/api/health` and the auth entry points.
 | `/api/ai/image` | POST | AI image generation (raster PNG, multiple aspect ratios) |
 | `/api/ai/edit-image` | POST | AI edit of a reference image (returns raster proposal) |
 
-## Data Model (Prisma / SQLite)
+## Data Model (Prisma / PostgreSQL)
 
 - **User** — owner account (bcrypt password hash, role). Single-business deployment; the schema can accommodate more users later.
 - **BrandSettings** — one-per-user persistent business profile + palette/typography + official logo reference.
 - **DesignProject** — `doc` holds the editable **DesignDocument JSON** (source of truth), plus preview thumbnail, template flag, archive flag.
 - **ProjectVersion** — snapshot of `doc` for revision history and restore.
-- **Asset** — uploaded images stored as **data-urls inside SQLite** (with kind, size, dimensions).
+- **Asset** — uploaded images stored as data-urls in PostgreSQL (with kind, size, dimensions).
 - **Product** — catalogue items (price kept as a string to allow `₦` formatting).
 - **ExportRecord** — metadata history of every export (files themselves download straight to the browser; nothing is stored server-side).
 
@@ -124,13 +126,9 @@ bun run build       # produces a self-contained .next/standalone/
 bun run start       # NODE_ENV=production, honours PORT (default 3000), logs to server.log
 ```
 
-On the server, before the first start, make sure the environment is configured and the schema exists:
+For Vercel, the `vercel-build` script runs `prisma migrate deploy` on Production deployments before the build; it skips migrations on Preview deployments to avoid allowing a preview build to mutate the production database. The committed migrations create the PostgreSQL schema. For a manual deployment, run `bun run db:migrate:deploy` with the correct `DATABASE_URL` before starting the app.
 
-```bash
-bun run db:push
-```
-
-Set `AUTH_SECRET` explicitly in production (32+ random chars) so sessions survive restarts and don't depend on the `db/.auth-secret` fallback file.
+Set `AUTH_SECRET` explicitly in every production environment (32+ random characters). Production authentication intentionally fails closed when this secret is missing; it will not generate a per-instance file secret.
 
 ### Reverse proxy (TLS)
 
@@ -178,7 +176,7 @@ User=www-data
 WorkingDirectory=/opt/mk-brand-kit
 Environment=NODE_ENV=production
 Environment=PORT=3000
-Environment=DATABASE_URL=file:/opt/mk-brand-kit/db/custom.db
+Environment=DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE?sslmode=require
 Environment=AUTH_SECRET=<paste output of: openssl rand -hex 32>
 ExecStart=/usr/local/bin/bun /opt/mk-brand-kit/.next/standalone/server.js
 Restart=always
@@ -194,25 +192,13 @@ sudo systemctl enable --now mk-brand-kit
 ```
 
 Notes:
-- Keep `WorkingDirectory` at the project root so the `db/` folder (SQLite file and the `db/.auth-secret` fallback) resolves consistently.
-- `www-data` needs write access to `db/` (the SQLite file and, if used, the auto-generated secret).
-- If you deploy only the `standalone/` folder to the server, still run `bun run db:push` there (or copy a prepared `db/custom.db`) so the schema exists.
+- Keep `AUTH_SECRET` stable across restarts and all application instances. PostgreSQL stores the persistent app data; no local database file is required.
+- The app process does not need write access to a local database directory when using PostgreSQL.
+- If you deploy only the `standalone/` folder to the server, run `bun run db:migrate:deploy` from the project with the production `DATABASE_URL` before starting the app.
 
 ### Persistence & backup
 
-Everything lives in **two files**:
-
-1. **`db/custom.db`** — the entire database: users, brand settings, projects, versions, uploaded assets (as data-urls), products, export history. This is the single source of truth.
-2. **`db/.auth-secret`** — the session signing secret (only used when `AUTH_SECRET` is not set). If it is lost or changed, all existing sessions are invalidated (users simply log in again) — but back it up so a restore doesn't log everyone out.
-
-Backup while the server is stopped (or use `sqlite3 db/custom.db ".backup 'backup/custom-$(date +%F).db'"` for a live-safe copy):
-
-```bash
-sqlite3 db/custom.db ".backup '/backups/custom-$(date +%F).db'"
-cp db/.auth-secret /backups/.auth-secret.bak
-```
-
-Restore = stop the service, copy both files back, start the service.
+PostgreSQL stores the persistent application data. Back up the database using the provider's supported backup/export tools, and keep `AUTH_SECRET` in a secure password manager or secrets manager. Do not copy a local SQLite file for PostgreSQL deployments. Restoring the database and restoring the same `AUTH_SECRET` preserves both saved data and existing session validity.
 
 ## Testing & QA
 
@@ -277,19 +263,13 @@ Important behaviours:
 
 - **Logs** — dev output: `dev.log` (`bun run dev` tees to it). Production output: `server.log`. Start there.
 - **Port 3000 already in use** — stop the other process (`lsof -i :3000` / `kill <pid>`) or change the `-p 3000` in the `dev` script / set `PORT` for production.
-- **Schema drift / “table does not exist”** — run `bun run db:push`. ⚠️ The script includes `--accept-data-loss`, which can drop columns/tables if the schema changed — **back up `db/custom.db` first**.
-- **Full database reset** — stop the server, delete `db/custom.db`, run `bun run db:push`, then register the owner again. **This erases all designs, assets, products and history.**
-- **Forgot password** — there is no password-reset flow. Two sqlite-level options:
-  - Update the hash in place (keeps all data):
-    ```bash
-    bun -e "import bcrypt from 'bcryptjs'; console.log(bcrypt.hashSync('new-password', 10))"
-    sqlite3 db/custom.db "UPDATE User SET passwordHash='<hash>' WHERE email='owner@example.com';"
-    ```
-  - Or delete the user row to re-enable first-run registration: `sqlite3 db/custom.db "DELETE FROM User;"` — ⚠️ **all related rows cascade-delete** (brand settings, projects, versions, assets, products, export history).
-- **Everyone logged out unexpectedly** — `AUTH_SECRET` changed or `db/.auth-secret` was deleted/recreated. Sessions are signed per secret; users just sign in again.
+- **Schema drift / “table does not exist”** — verify `DATABASE_URL` points to the intended PostgreSQL database, then run `bun run db:migrate:deploy` after checking the committed migration history.
+- **Owner cannot sign in on a newly connected database** — the PostgreSQL database starts separately from the Z.ai SQLite database. If no user was migrated, use the first-run registration flow to create the owner account. Do not reset or delete a database to troubleshoot login.
+- **Forgot password** — there is no password-reset flow. Use your PostgreSQL provider's SQL editor or a trusted local database client to update the owner's `passwordHash` with a bcrypt hash. Do not delete the user row as a login troubleshooting shortcut; related data can be cascade-deleted.
+- **Everyone logged out unexpectedly** — `AUTH_SECRET` changed. Sessions are signed per secret; users can sign in again.
 - **Export dialog warns about PDF fallback** — the vector PDF path failed for this document and a raster page was embedded instead (details in the browser console). Try image mode at a higher DPI, or simplify heavy elements (large embedded images, exotic effects).
 - **AI actions fail** — network/SDK issue on the server side; see `dev.log`/`server.log`. The app remains fully usable without AI.
-- **Thumbnails missing after a manual DB copy** — previews live inside the database as data-urls; copy the whole `db/custom.db`, not just part of it.
+- **Thumbnails missing after a database migration/restore** — previews and uploaded assets are stored in the database as data-urls; verify the full database contents were migrated.
 
 ## Known Limitations
 
@@ -299,5 +279,5 @@ Honest list of what this build does **not** do:
 - **No canvas grouping.** Multi-select *move* is supported, but there are no groups/frames; complex compositions are managed via the layers panel.
 - **Web-font mapping in vector PDFs.** Georgia/Verdana/Trebuchet map to metric-compatible PDF base fonts (Times/Helvetica) in vector PDF mode, so glyph shapes can differ slightly from the on-screen preview. Use image-mode PDF for pixel-exact output.
 - **No AI vectorisation of raster logos.** AI edits return flattened raster images; tracing a bitmap logo into editable vectors is not available.
-- **SQLite single-file storage.** Convenient and self-contained, but a single writer and file-size practicality limit scale. For heavier production use, swap `DATABASE_URL` to a Postgres provider and adjust the Prisma datasource.
+- **PostgreSQL connection errors.** Confirm the Prisma datasource provider is `postgresql`, `DATABASE_URL` is the PostgreSQL URL from Vercel's Prisma Postgres integration, and the latest deployment includes the migration files.
 - **No password-reset flow** (see Troubleshooting for the manual procedure) and export history stores metadata only — exported files download directly to the browser and are not archived server-side.
