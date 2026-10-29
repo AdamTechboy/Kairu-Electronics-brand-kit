@@ -131,3 +131,19 @@ describe('custom printable documents and selective official-logo replacement', (
     expect(fillLogoPlaceholders(original, 'data:image/png;base64,bmV3', false)).toBe(original)
   })
 })
+
+
+  test('transparent product images do not sit on an opaque photo-card background', () => {
+    const result = composeFlyerDoc({
+      headline: 'Solar offer',
+      products: [{ name: 'Solar Panel', imageDataUrl: 'data:image/png;base64,AA==', price: '45000', availability: 'In Stock' }],
+      extraImages: [], style: 'catalogue', showLogo: false, showAddress: false, showDescription: false,
+    }, { width: 794, height: 1123, presetId: 'a4-portrait' }, DEFAULT_BRAND)
+    const page = result.doc.pages[0]
+    const photo = page.elements.find((element) => element.name === 'Solar Panel image')
+    const info = page.elements.find((element) => element.name === 'Product info panel')
+    expect(photo).toBeDefined()
+    expect(info).toBeDefined()
+    expect(info.y).toBeGreaterThan(photo.y)
+    expect(page.elements.some((element) => element.name === 'Product card')).toBe(false)
+  })
