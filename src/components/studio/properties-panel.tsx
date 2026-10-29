@@ -270,7 +270,7 @@ export function PropertiesPanel({ element, palette, docSize, onPatch, onDuplicat
         <div className="space-y-3">
           <div className="space-y-1">
             <Label className="text-[11px] uppercase text-muted-foreground">Image fit in frame</Label>
-            <Select value={element.fit ?? 'cover'} onValueChange={(v) => onPatch({ fit: v as 'cover' | 'contain' | 'fill' }, 'Fit')}>
+            <Select value={element.fit ?? 'contain'} onValueChange={(v) => onPatch({ fit: v as 'cover' | 'contain' | 'fill' }, 'Fit')}>
               <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="cover">Fill frame (crop overflow)</SelectItem>

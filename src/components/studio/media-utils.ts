@@ -38,7 +38,7 @@ export async function compressImageFile(file: File, maxPx = 1600, quality = 0.86
   }
   ctx.drawImage(img, 0, 0, width, height)
 
-  const keepPng = file.type === 'image/png' || file.type === 'image/svg+xml'
+  const keepPng = file.type === 'image/png' || file.type === 'image/webp' || file.type === 'image/svg+xml'
   const outMime = keepPng ? 'image/png' : 'image/jpeg'
   let outUrl = canvas.toDataURL(outMime, quality)
 

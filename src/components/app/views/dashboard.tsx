@@ -26,11 +26,15 @@ export function DashboardView() {
   const [recent, setRecent] = useState<ProjectSummary[]>([])
   const [exports, setExports] = useState<ExportRecord[]>([])
   const [loading, setLoading] = useState(true)
+  const [projectCount, setProjectCount] = useState(0)
+  const [exportCount, setExportCount] = useState(0)
 
   useEffect(() => {
     ;(async () => {
       try {
         const [p, e] = await Promise.all([projectApi.list({ templates: 'exclude', archived: false }), exportApi.list()])
+        setProjectCount(p.projects.length)
+        setExportCount(e.exports.length)
         setRecent(p.projects.slice(0, 6))
         setExports(e.exports.slice(0, 5))
       } catch {
@@ -47,20 +51,38 @@ export function DashboardView() {
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-4 lg:p-8" data-testid="dashboard">
       {/* welcome */}
-      <section className="overflow-hidden rounded-2xl bg-[#1F2A44] p-6 text-white lg:p-8">
-        <div className="flex flex-wrap items-end justify-between gap-4">
+      <section className="relative isolate overflow-hidden rounded-3xl bg-[#1F2A44] p-6 text-white shadow-lg shadow-slate-900/10 sm:p-8 lg:p-10">
+        <div aria-hidden="true" className="pointer-events-none absolute -right-16 -top-24 -z-10 h-72 w-72 rounded-full border-[36px] border-white/[0.06]" />
+        <div aria-hidden="true" className="pointer-events-none absolute right-16 top-24 -z-10 h-28 w-28 rounded-full bg-[#F5A623]/15 blur-2xl" />
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-center">
           <div>
-            <p className="text-xs uppercase tracking-widest text-[#F5A623]">Welcome back, {(user.name ?? 'Owner').split(' ')[0]}</p>
-            <h1 className="mt-1 text-2xl font-bold lg:text-3xl">{brand.businessName}</h1>
-            <p className="mt-2 max-w-xl text-sm text-white/70">{brand.tagline || brand.businessCategory}</p>
-          </div>
-          <div className="flex items-center gap-2 rounded-xl bg-white/10 p-3 text-xs">
-            <div className="flex gap-1">
-              {[1, 2, 3, 4].map((i) => (
-                <span key={i} className={`h-2 w-6 rounded-full ${i <= brandScore ? 'bg-[#F5A623]' : 'bg-white/20'}`} />
-              ))}
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.07] px-3 py-1 text-[11px] font-medium tracking-wide text-white/80">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#F5A623]" /> YOUR CREATIVE WORKSPACE
             </div>
-            <span className="text-white/80">Brand identity {brandScore === 4 ? 'complete' : `${brandScore}/4`}</span>
+            <p className="mt-5 text-sm text-[#F5A623]">Welcome back, {(user.name ?? 'Owner').split(' ')[0]}</p>
+            <h1 className="mt-1 max-w-2xl text-3xl font-bold tracking-tight sm:text-4xl">{brand.businessName}</h1>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-white/70">{brand.tagline || brand.businessCategory || 'Create consistent, professional designs for your business.'}</p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Button className="gap-2 bg-[#F5A623] font-semibold text-[#1F2A44] hover:bg-[#ffc04d]" onClick={() => navigate('flyer')}><FileImage className="h-4 w-4" /> Create a product flyer <ArrowRight className="h-4 w-4" /></Button>
+              <Button variant="outline" className="border-white/25 bg-white/[0.06] text-white hover:bg-white/10 hover:text-white" onClick={() => navigate('brand-settings')}>Manage brand identity</Button>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-5 backdrop-blur-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium text-white/60">Brand readiness</p>
+                <p className="mt-1 text-2xl font-bold">{Math.round((brandScore / 4) * 100)}<span className="text-sm font-medium text-white/60">%</span></p>
+              </div>
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#F5A623] text-[#1F2A44]"><Sparkles className="h-6 w-6" /></div>
+            </div>
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
+              <div className="h-full rounded-full bg-[#F5A623] transition-all" style={{ width: `${(brandScore / 4) * 100}%` }} />
+            </div>
+            <p className="mt-3 text-xs leading-5 text-white/60">{brandScore === 4 ? 'Your core brand details are ready to reuse across new designs.' : `${4 - brandScore} setup item${4 - brandScore === 1 ? '' : 's'} left before your brand kit is complete.`}</p>
+            <div className="mt-4 grid grid-cols-2 gap-3 border-t border-white/10 pt-4">
+              <div><p className="text-xl font-semibold">{projectCount}</p><p className="text-[11px] text-white/55">Saved designs</p></div>
+              <div><p className="text-xl font-semibold">{exportCount}</p><p className="text-[11px] text-white/55">Recorded exports</p></div>
+            </div>
           </div>
         </div>
       </section>

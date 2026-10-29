@@ -135,10 +135,16 @@ export function ImageCropDialog({ open, imageSrc, fileName, frameAspect, onCance
     const a = ASPECTS[idx]
     const aspect = a.value === -1 ? (frameAspect ?? null) : a.value
     if (boxRef.current.w && boxRef.current.h) {
-      // refit around the box centre using the current (rotated) dims
-      const w = boxRef.current.w
-      const h = boxRef.current.h
-      setBox(computeBox(w, h, aspect))
+      // Fit the new aspect ratio inside the current selection and preserve its
+      // position. computeBox returns coordinates relative to (0, 0), so offset
+      // the result back to the selection's centre instead of jumping to top-left.
+      const current = boxRef.current
+      const fitted = computeBox(current.w, current.h, aspect)
+      setBox({
+        ...fitted,
+        x: Math.round(current.x + (current.w - fitted.w) / 2),
+        y: Math.round(current.y + (current.h - fitted.h) / 2),
+      })
     }
   }, [frameAspect])
 
@@ -256,13 +262,28 @@ export function ImageCropDialog({ open, imageSrc, fileName, frameAspect, onCance
     const ctx = canvas.getContext('2d')!
     ctx.imageSmoothingQuality = 'high'
     ctx.drawImage(rotCanvas, rx, ry, rw, rh, 0, 0, outW, outH)
-    // 3) encode: pick the smaller of PNG / JPEG at the chosen quality
+    // 3) Prefer JPEG only when the cropped pixels are fully opaque. Encoding a
+    // transparent PNG/WebP crop as JPEG would silently replace transparency with
+    // a solid background, so keep PNG whenever any output pixel has alpha < 255.
     let dataUrl = canvas.toDataURL('image/png')
     if (quality < 100) {
       try {
-        const jpeg = canvas.toDataURL('image/jpeg', quality / 100)
-        if (jpeg.length < dataUrl.length) dataUrl = jpeg
-      } catch {}
+        const pixels = ctx.getImageData(0, 0, outW, outH).data
+        let hasTransparency = false
+        for (let i = 3; i < pixels.length; i += 4) {
+          if (pixels[i] < 255) {
+            hasTransparency = true
+            break
+          }
+        }
+        if (!hasTransparency) {
+          const jpeg = canvas.toDataURL('image/jpeg', quality / 100)
+          if (jpeg.length < dataUrl.length) dataUrl = jpeg
+        }
+      } catch {
+        // If pixel inspection is blocked, preserve the PNG rather than risk
+        // flattening transparent pixels into JPEG.
+      }
     }
     onApply({
       dataUrl,

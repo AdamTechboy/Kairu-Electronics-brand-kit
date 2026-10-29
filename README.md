@@ -219,11 +219,13 @@ Restore = stop the service, copy both files back, start the service.
 ### Automated checks
 
 ```bash
+bun run test          # CSV import/export parsing regression tests
 bun run lint          # ESLint
-npx tsc --noEmit      # type check
+bunx tsc --noEmit     # type check (run separately because next.config.ts ignores build errors)
+bun run build         # production build
 ```
 
-> **Honest note:** this build ships **no automated unit or end-to-end tests** — the sandbox forbids test code, and `next.config.ts` sets `typescript.ignoreBuildErrors: true`, so running `npx tsc --noEmit` manually is important. QA was performed via ESLint, the TypeScript compiler, and browser end-to-end verification against the checklist below.
+GitHub Actions runs the test suite, TypeScript check, ESLint, and production build on every pull request targeting `main`. The unit tests cover quoted commas, escaped quotes, embedded line breaks, UTF-8 BOMs, Windows line endings, empty rows, and malformed quoting. The checklist below contains additional manual end-to-end checks; these should be performed in the browser before a production launch.
 
 ### Manual test checklist
 

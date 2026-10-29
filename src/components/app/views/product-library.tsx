@@ -2,11 +2,13 @@
 
 // Product Library: reusable catalogue used by the flyer generator.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../app-context'
 import { productApi, assetApi } from '@/lib/api-client'
 import type { Product } from '@/lib/api-client'
+import { csvCell, parseCsvRows } from '@/lib/product-csv'
 import { compressImageFile } from '@/components/studio/media-utils'
+import { ImageCropDialog, type CropResult } from '@/components/studio/image-crop-dialog'
 import { AVAILABILITY_OPTIONS, PRODUCT_CATEGORIES, formatNaira } from '@/lib/brand'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
-import { Package, Plus, Pencil, Trash2, Upload, Loader2 } from 'lucide-react'
+import { Package, Plus, Pencil, Trash2, Upload, Loader2, X, ChevronLeft, ChevronRight, Crop, FileDown, FileUp } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface DraftProduct {
@@ -33,16 +35,24 @@ interface DraftProduct {
 
 const EMPTY: DraftProduct = { name: '', category: 'Other Electronics', description: '', price: '', availability: 'In Stock', stockRef: '', notes: '', imageAssetIds: [] }
 
+
 export function ProductLibraryView() {
   const { brand } = useApp()
   const [products, setProducts] = useState<Product[]>([])
+  const [searchQuery, setSearchQuery] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('all')
+  const [sortBy, setSortBy] = useState('recent')
+  const [importingCsv, setImportingCsv] = useState(false)
   const [loading, setLoading] = useState(true)
   const [dialog, setDialog] = useState(false)
   const [draft, setDraft] = useState<DraftProduct>(EMPTY)
   const [saving, setSaving] = useState(false)
+  const [uploadingImages, setUploadingImages] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<Product | null>(null)
   const [imgUrls, setImgUrls] = useState<Record<string, string>>({})
+  const [cropTarget, setCropTarget] = useState<{ id: string; index: number; src: string } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const csvRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -70,6 +80,22 @@ export function ProductLibraryView() {
 
   useEffect(() => { void load() }, [load])
 
+  const productCategories = [...new Set(products.map((p) => p.category).filter(Boolean))].sort((a, b) => a.localeCompare(b))
+  const normalizedQuery = searchQuery.trim().toLocaleLowerCase()
+  const filteredProducts = useMemo(() => products.filter((p) => {
+    const matchesCategory = categoryFilter === 'all' || p.category === categoryFilter
+    const matchesQuery = !normalizedQuery || [p.name, p.category, p.description, p.stockRef].some((value) => value.toLocaleLowerCase().includes(normalizedQuery))
+    return matchesCategory && matchesQuery
+  }).sort((a, b) => {
+    if (sortBy === 'name') return a.name.localeCompare(b.name)
+    if (sortBy === 'price-low' || sortBy === 'price-high') {
+      const price = (value: string) => Number(value.replace(/[^\d.]/g, '')) || 0
+      return sortBy === 'price-low' ? price(a.price) - price(b.price) : price(b.price) - price(a.price)
+    }
+    if (sortBy === 'availability') return a.availability.localeCompare(b.availability) || a.name.localeCompare(b.name)
+    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  }), [products, categoryFilter, normalizedQuery, sortBy])
+
   const openNew = () => { setDraft(EMPTY); setDialog(true) }
   const openEdit = (p: Product) => {
     setDraft({ id: p.id, name: p.name, category: p.category || 'Other Electronics', description: p.description, price: p.price, availability: p.availability, stockRef: p.stockRef, notes: p.notes, imageAssetIds: p.imageAssetIds })
@@ -77,23 +103,139 @@ export function ProductLibraryView() {
   }
 
   const handleImage = async (files: FileList | null) => {
-    if (!files?.length) return
-    try {
-      const c = await compressImageFile(files[0], 1200)
-      const { asset } = await assetApi.upload({
-        filename: files[0].name,
-        mimeType: c.mimeType,
-        dataUrl: c.dataUrl,
-        kind: 'product',
-        width: c.width,
-        height: c.height,
-      })
-      setDraft((d) => ({ ...d, imageAssetIds: [asset.id, ...d.imageAssetIds].slice(0, 6) }))
-      setImgUrls((m) => ({ ...m, [asset.id]: c.dataUrl }))
-      toast.success('Image attached to the product.')
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Upload failed')
+    if (!files?.length || uploadingImages) return
+    const chosen = Array.from(files).slice(0, Math.max(0, 6 - draft.imageAssetIds.length))
+    if (!chosen.length) {
+      toast.error('A product can have up to 6 photos. Remove one before adding more.')
+      return
     }
+
+    setUploadingImages(true)
+    const uploaded: { id: string; dataUrl: string }[] = []
+    const failures: string[] = []
+    try {
+      // Keep successful uploads attached even if a later file in the batch fails.
+      for (const file of chosen) {
+        try {
+          const compressed = await compressImageFile(file, 1200)
+          const { asset } = await assetApi.upload({
+            filename: file.name,
+            mimeType: compressed.mimeType,
+            dataUrl: compressed.dataUrl,
+            kind: 'product',
+            width: compressed.width,
+            height: compressed.height,
+          })
+          uploaded.push({ id: asset.id, dataUrl: compressed.dataUrl })
+        } catch {
+          failures.push(file.name)
+        }
+      }
+
+      if (uploaded.length) {
+        setDraft((d) => ({ ...d, imageAssetIds: [...d.imageAssetIds, ...uploaded.map((x) => x.id)].slice(0, 6) }))
+        setImgUrls((m) => ({ ...m, ...Object.fromEntries(uploaded.map((x) => [x.id, x.dataUrl])) }))
+      }
+      if (failures.length) {
+        toast.error(uploaded.length + ' photo(s) uploaded; ' + failures.length + ' failed: ' + failures.join(', '))
+      } else {
+        toast.success(uploaded.length + ' photo(s) attached to the product.')
+      }
+    } finally {
+      setUploadingImages(false)
+    }
+  }
+
+  const downloadCsvTemplate = () => {
+    const headers = ['name', 'category', 'description', 'price', 'availability', 'stockRef', 'notes']
+    const example = ['Example product', 'Accessories', 'Short product description', '25000', 'In Stock', 'SKU-001', 'Optional notes']
+    const blob = new Blob(['\uFEFF' + [headers, example].map((row) => row.map(csvCell).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'kairu-products-import-template.csv'
+    link.click()
+    URL.revokeObjectURL(url)
+    toast.success('CSV template downloaded. Replace the example row with your products.')
+  }
+
+  const exportCsv = () => {
+    const headers = ['name', 'category', 'description', 'price', 'availability', 'stockRef', 'notes']
+    const lines = [
+      headers.map(csvCell).join(','),
+      ...products.map((p) => [p.name, p.category, p.description, p.price, p.availability, p.stockRef, p.notes].map(csvCell).join(',')),
+    ]
+    const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'kairu-electronics-products.csv'
+    link.click()
+    URL.revokeObjectURL(url)
+    toast.success('Product catalogue exported to CSV.')
+  }
+
+  const importCsv = async (file: File | undefined) => {
+    if (!file || importingCsv) return
+    setImportingCsv(true)
+    try {
+      const rows = parseCsvRows(await file.text())
+      if (rows.length < 2) throw new Error('The CSV file has no product rows.')
+      const headers = rows[0].map((h) => h.trim().toLowerCase().replace(/[\s-]+/g, ''))
+      const nameIndex = headers.indexOf('name')
+      if (nameIndex < 0) throw new Error('The CSV must include a "name" column.')
+      const value = (row: string[], key: string, fallback = '') => {
+        const index = headers.indexOf(key.toLowerCase().replace(/[\s-]+/g, ''))
+        return index >= 0 ? (row[index] ?? '').trim() : fallback
+      }
+      let imported = 0
+      let failed = 0
+      for (const row of rows.slice(1)) {
+        const name = (row[nameIndex] ?? '').trim()
+        if (!name) {
+          failed += 1
+          continue
+        }
+        try {
+          await productApi.create({
+            name,
+            category: value(row, 'category', 'Other Electronics') || 'Other Electronics',
+            description: value(row, 'description'),
+            price: value(row, 'price').replace(/[^\d.]/g, ''),
+            availability: value(row, 'availability', 'In Stock') || 'In Stock',
+            stockRef: value(row, 'stockRef') || value(row, 'sku'),
+            notes: value(row, 'notes'),
+            imageAssetIds: [],
+          })
+          imported += 1
+        } catch {
+          failed += 1
+        }
+      }
+      await load()
+      if (failed) toast.error(imported + ' product(s) imported; ' + failed + ' row(s) skipped or failed.')
+      else toast.success(imported + ' product(s) imported successfully.')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not import CSV file')
+    } finally {
+      setImportingCsv(false)
+      if (csvRef.current) csvRef.current.value = ''
+    }
+  }
+
+  const movePhoto = (index: number, direction: -1 | 1) => {
+    setDraft((d) => {
+      const next = [...d.imageAssetIds]
+      const target = index + direction
+      if (target < 0 || target >= next.length) return d
+      ;[next[index], next[target]] = [next[target], next[index]]
+      return { ...d, imageAssetIds: next }
+    })
+  }
+
+  const removePhoto = (id: string) => {
+    // Remove only the reference from this product; the asset may be used elsewhere.
+    setDraft((d) => ({ ...d, imageAssetIds: d.imageAssetIds.filter((photoId) => photoId !== id) }))
   }
 
   const save = async () => {
@@ -123,7 +265,15 @@ export function ProductLibraryView() {
           <h1 className="flex items-center gap-2 text-2xl font-bold"><Package className="h-6 w-6 text-amber-600" /> Product Library</h1>
           <p className="text-sm text-muted-foreground">Save products once — pick them in any flyer with names, prices and photos filled in.</p>
         </div>
-        <Button className="gap-2 bg-[#1F2A44] hover:bg-[#2a3a5c]" onClick={openNew}><Plus className="h-4 w-4" /> Add product</Button>
+        <div className="flex flex-wrap gap-2">
+          <input ref={csvRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => { void importCsv(e.target.files?.[0]); }} />
+          <Button variant="outline" className="gap-2" onClick={() => csvRef.current?.click()} disabled={importingCsv}>
+            {importingCsv ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />} Import CSV
+          </Button>
+          <Button variant="outline" className="gap-2" onClick={downloadCsvTemplate}><FileDown className="h-4 w-4" /> CSV template</Button>
+          <Button variant="outline" className="gap-2" onClick={exportCsv} disabled={products.length === 0}><FileDown className="h-4 w-4" /> Export CSV</Button>
+          <Button className="gap-2 bg-[#1F2A44] hover:bg-[#2a3a5c]" onClick={openNew}><Plus className="h-4 w-4" /> Add product</Button>
+        </div>
       </div>
 
       {loading ? (
@@ -136,13 +286,49 @@ export function ProductLibraryView() {
           <Button className="mt-4 bg-[#1F2A44] hover:bg-[#2a3a5c]" onClick={openNew}>Add your first product</Button>
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {products.map((p) => (
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_190px_190px]">
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search products, categories, descriptions or SKU…"
+              aria-label="Search products"
+            />
+            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+              <SelectTrigger aria-label="Filter products by category"><SelectValue placeholder="All categories" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All categories</SelectItem>
+                {productCategories.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={sortBy} onValueChange={setSortBy}>
+              <SelectTrigger aria-label="Sort products"><SelectValue placeholder="Sort products" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="recent">Recently updated</SelectItem>
+                <SelectItem value="name">Name: A–Z</SelectItem>
+                <SelectItem value="price-low">Price: low to high</SelectItem>
+                <SelectItem value="price-high">Price: high to low</SelectItem>
+                <SelectItem value="availability">Availability</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {filteredProducts.length === 0 ? (
+            <div className="rounded-xl border border-dashed p-8 text-center">
+              <p className="font-medium">No matching products</p>
+              <p className="mt-1 text-sm text-muted-foreground">Try a different search or category.</p>
+              <Button variant="outline" size="sm" className="mt-3" onClick={() => { setSearchQuery(''); setCategoryFilter('all') }}>Clear filters</Button>
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {filteredProducts.map((p) => (
             <div key={p.id} className="flex gap-3 rounded-xl border bg-background p-3">
-              <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
-                {p.imageAssetIds[0] && imgUrls[p.imageAssetIds[0]]
-                  ? <img src={imgUrls[p.imageAssetIds[0]]} alt={p.name} className="h-full w-full object-cover" />
-                  : <Package className="h-7 w-7 text-muted-foreground/50" />}
+              <div className="flex w-20 shrink-0 flex-col gap-1">
+                <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-lg bg-muted">
+                  {p.imageAssetIds[0] && imgUrls[p.imageAssetIds[0]]
+                    ? <img src={imgUrls[p.imageAssetIds[0]]} alt={p.name} className="h-full w-full object-contain" />
+                    : <Package className="h-7 w-7 text-muted-foreground/50" />}
+                </div>
+                {p.imageAssetIds.length > 1 && <p className="text-center text-[10px] text-muted-foreground">+{p.imageAssetIds.length - 1} more photo{p.imageAssetIds.length === 2 ? '' : 's'}</p>}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-start justify-between gap-2">
@@ -162,12 +348,14 @@ export function ProductLibraryView() {
                 {p.description && <p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">{p.description}</p>}
               </div>
             </div>
-          ))}
+              ))}
+            </div>
+          )}
         </div>
       )}
 
       {/* dialog */}
-      <Dialog open={dialog} onOpenChange={setDialog}>
+      <Dialog open={dialog} onOpenChange={(nextOpen) => { if (!nextOpen && uploadingImages) return; setDialog(nextOpen) }}>
         <DialogContent className="max-h-[90dvh] max-w-lg overflow-y-auto">
           <DialogHeader><DialogTitle>{draft.id ? 'Edit product' : 'New product'}</DialogTitle></DialogHeader>
           <div className="space-y-3">
@@ -209,24 +397,74 @@ export function ProductLibraryView() {
               <Label>Notes (optional)</Label>
               <Textarea rows={2} value={draft.notes} onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value }))} placeholder="Internal notes — never printed" />
             </div>
-            <div className="space-y-1.5">
-              <Label>Photo</Label>
-              <div className="flex items-center gap-3">
-                <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-lg border bg-muted">
-                  {draft.imageAssetIds[0] && imgUrls[draft.imageAssetIds[0]]
-                    ? <img src={imgUrls[draft.imageAssetIds[0]]} alt="Product" className="h-full w-full object-cover" />
-                    : <Package className="h-6 w-6 text-muted-foreground/50" />}
-                </div>
-                <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={(e) => { void handleImage(e.target.files); e.currentTarget.value = '' }} />
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => fileRef.current?.click()}><Upload className="h-3.5 w-3.5" /> Upload photo</Button>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <Label>Product photos ({draft.imageAssetIds.length}/6)</Label>
+                <Button variant="outline" size="sm" className="gap-1.5" disabled={uploadingImages || draft.imageAssetIds.length >= 6} onClick={() => fileRef.current?.click()}>{uploadingImages ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />} {uploadingImages ? 'Uploading…' : 'Add photos'}</Button>
               </div>
+              <p className="text-xs text-muted-foreground">The first photo is the primary image. Use the arrows to reorder photos. Removing a photo only detaches it from this product.</p>
+              <input ref={fileRef} type="file" multiple accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={(e) => { void handleImage(e.target.files); e.currentTarget.value = '' }} />
+              {draft.imageAssetIds.length ? (
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+                  {draft.imageAssetIds.map((id, index) => (
+                    <div key={id} className="relative rounded-lg border p-1">
+                      <div className="flex aspect-square items-center justify-center overflow-hidden rounded bg-muted">
+                        {imgUrls[id] ? <img src={imgUrls[id]} alt={`Product photo ${index + 1}`} className="h-full w-full object-contain" /> : <Package className="h-5 w-5 text-muted-foreground/50" />}
+                      </div>
+                      <div className="mt-1 flex items-center justify-between gap-1">
+                        <Button type="button" variant="ghost" size="icon" className="h-6 w-6" aria-label="Move photo left" disabled={index === 0} onClick={() => movePhoto(index, -1)}><ChevronLeft className="h-3.5 w-3.5" /></Button>
+                        <span className="text-[10px] text-muted-foreground">{index === 0 ? 'Primary' : index + 1}</span>
+                        <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-destructive" aria-label="Remove photo" onClick={() => removePhoto(id)}><X className="h-3.5 w-3.5" /></Button>
+                        <Button type="button" variant="ghost" size="icon" className="h-6 w-6" aria-label="Move photo right" disabled={index === draft.imageAssetIds.length - 1} onClick={() => movePhoto(index, 1)}><ChevronRight className="h-3.5 w-3.5" /></Button>
+                      </div>
+                      {imgUrls[id] && <Button type="button" variant="outline" size="sm" className="mt-1 h-7 w-full gap-1 px-1 text-[11px]" onClick={() => setCropTarget({ id, index, src: imgUrls[id] })}><Crop className="h-3 w-3" /> Crop / rotate</Button>}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 rounded-lg border border-dashed p-4 text-sm text-muted-foreground"><Package className="h-6 w-6" /> No photos added yet.</div>
+              )}
             </div>
-            <Button className="w-full bg-[#1F2A44] hover:bg-[#2a3a5c]" onClick={() => void save()} disabled={saving}>
+            <Button className="w-full bg-[#1F2A44] hover:bg-[#2a3a5c]" onClick={() => void save()} disabled={saving || uploadingImages}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null} {draft.id ? 'Save changes' : 'Add product'}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
+
+      <ImageCropDialog
+        key={cropTarget ? `${cropTarget.id}-${cropTarget.index}` : 'no-crop'}
+        open={!!cropTarget}
+        imageSrc={cropTarget?.src ?? ''}
+        fileName={cropTarget ? `Product photo ${cropTarget.index + 1}` : undefined}
+        frameAspect={null}
+        onCancel={() => setCropTarget(null)}
+        onApply={async (result: CropResult) => {
+          if (!cropTarget) return
+          try {
+            const dataUrl = result.dataUrl
+            const mimeType = dataUrl.startsWith('data:image/png') ? 'image/png' : 'image/jpeg'
+            const { asset } = await assetApi.upload({
+              filename: `product-photo-cropped-${Date.now()}.${mimeType === 'image/png' ? 'png' : 'jpg'}`,
+              mimeType,
+              dataUrl,
+              kind: 'product',
+              width: result.width,
+              height: result.height,
+            })
+            setDraft((d) => {
+              const imageAssetIds = [...d.imageAssetIds]
+              if (imageAssetIds[cropTarget.index] === cropTarget.id) imageAssetIds[cropTarget.index] = asset.id
+              return { ...d, imageAssetIds }
+            })
+            setImgUrls((urls) => ({ ...urls, [asset.id]: dataUrl }))
+            setCropTarget(null)
+            toast.success('Cropped photo added. The original asset is preserved.')
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Could not save the cropped photo')
+          }
+        }}
+      />
 
       <AlertDialog open={!!confirmDelete} onOpenChange={(v) => !v && setConfirmDelete(null)}>
         <AlertDialogContent>

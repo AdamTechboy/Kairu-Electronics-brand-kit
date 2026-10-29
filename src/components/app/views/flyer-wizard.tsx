@@ -12,6 +12,7 @@ import type { DesignDocument } from '@/lib/design/types'
 import { productApi, assetApi } from '@/lib/api-client'
 import type { Product } from '@/lib/api-client'
 import { compressImageFile, symbolCategoryFallback } from '@/components/studio/media-utils'
+import { ImageCropDialog, type CropResult } from '@/components/studio/image-crop-dialog'
 import { getOfficialLogoDataUrl } from '@/lib/design/logo-resolver'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,7 +25,7 @@ import { Slider } from '@/components/ui/slider'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import {
-  ArrowLeft, ArrowRight, Wand2, Upload, PackagePlus, Trash2, ImageIcon, CheckCircle2, Loader2, AlertTriangle, Plus,
+  ArrowLeft, ArrowRight, Wand2, Upload, PackagePlus, Trash2, ImageIcon, CheckCircle2, Loader2, AlertTriangle, Plus, Crop,
 } from 'lucide-react'
 import { formatNaira, AVAILABILITY_OPTIONS } from '@/lib/brand'
 
@@ -81,6 +82,7 @@ export function FlyerWizardView() {
   const [loadingLib, setLoadingLib] = useState(false)
   const [pendingImages, setPendingImages] = useState<{ dataUrl: string; name: string }[]>([])
   const [uploading, setUploading] = useState(false)
+  const [cropTarget, setCropTarget] = useState<{ kind: 'product'; key: string; src: string; name: string } | { kind: 'pending'; index: number; src: string; name: string } | null>(null)
   const [generating, setGenerating] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const productsRef = useRef<WizardProduct[]>([])
@@ -436,10 +438,12 @@ export function FlyerWizardView() {
               <div className="mt-3 space-y-2">
                 <p className="text-xs font-semibold">{pendingImages.length} unassigned photo{pendingImages.length > 1 ? 's' : ''} — {pendingImages.length > 1 ? 'each will get its own frame in a photo gallery' : 'it will get its own frame in a photo gallery'}. Or assign one to a product:</p>
                 {pendingImages.map((img, i) => (
-                  <div key={i} className="flex items-center gap-3 rounded-lg border p-2">
-                    <img src={img.dataUrl} alt={img.name} className="h-12 w-12 rounded border object-cover" />
+                  <div key={i} className="flex flex-wrap items-center gap-3 rounded-lg border p-2">
+                    <img src={img.dataUrl} alt={img.name} className="h-12 w-12 rounded border object-contain" />
+                    <span className="min-w-0 flex-1 truncate text-xs">{img.name}</span>
+                    <Button size="sm" variant="outline" className="gap-1" onClick={() => setCropTarget({ kind: 'pending', index: i, src: img.dataUrl, name: img.name })}><Crop className="h-3.5 w-3.5" /> Crop / rotate</Button>
                     <Select onValueChange={(v) => assignPending(i, v)}>
-                      <SelectTrigger className="flex-1"><SelectValue placeholder="Assign to product…" /></SelectTrigger>
+                      <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Assign to product…" /></SelectTrigger>
                       <SelectContent>
                         {products.map((p) => (
                           <SelectItem key={p.key} value={p.key}>{p.name || 'Unnamed product'}</SelectItem>
@@ -470,14 +474,14 @@ export function FlyerWizardView() {
                   <div className="grid gap-3 sm:grid-cols-12">
                     <div className="sm:col-span-3">
                       {p.imageDataUrl ? (
-                        <div className="group relative overflow-hidden rounded-lg border">
-                          <img src={p.imageDataUrl} alt={p.name || 'Product'} className="h-24 w-full object-cover" />
-                          <button
-                            className="absolute inset-0 flex items-center justify-center bg-black/50 text-xs font-medium text-white opacity-0 transition group-hover:opacity-100"
-                            onClick={() => updateProduct(p.key, { imageDataUrl: undefined })}
-                          >
-                            Replace / remove
-                          </button>
+                        <div className="space-y-2">
+                          <div className="overflow-hidden rounded-lg border bg-muted">
+                            <img src={p.imageDataUrl} alt={p.name || 'Product'} className="h-24 w-full object-contain" />
+                          </div>
+                          <div className="grid grid-cols-2 gap-1">
+                            <Button size="sm" variant="outline" className="gap-1 px-1 text-[11px]" onClick={() => setCropTarget({ kind: 'product', key: p.key, src: p.imageDataUrl!, name: p.name || 'Product photo' })}><Crop className="h-3 w-3" /> Crop</Button>
+                            <Button size="sm" variant="outline" className="gap-1 px-1 text-[11px]" onClick={() => updateProduct(p.key, { imageDataUrl: undefined })}>Replace / remove</Button>
+                          </div>
                         </div>
                       ) : (
                         <button onClick={() => fileRef.current?.click()} className="flex h-24 w-full flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed text-[11px] text-muted-foreground hover:border-amber-400">
@@ -550,6 +554,23 @@ export function FlyerWizardView() {
           </div>
         </section>
       )}
+      <ImageCropDialog
+        key={cropTarget ? `${cropTarget.kind}-${cropTarget.kind === 'product' ? cropTarget.key : cropTarget.index}-${cropTarget.src.slice(-24)}` : 'no-crop'}
+        open={!!cropTarget}
+        imageSrc={cropTarget?.src ?? ''}
+        fileName={cropTarget?.name}
+        frameAspect={null}
+        onCancel={() => setCropTarget(null)}
+        onApply={(result: CropResult) => {
+          if (cropTarget?.kind === 'product') {
+            updateProduct(cropTarget.key, { imageDataUrl: result.dataUrl })
+          } else if (cropTarget?.kind === 'pending') {
+            setPendingImages((items) => items.map((item, index) => index === cropTarget.index ? { ...item, dataUrl: result.dataUrl } : item))
+          }
+          setCropTarget(null)
+          toast.success('Photo updated. The original upload remains unchanged.')
+        }}
+      />
     </div>
   )
 }

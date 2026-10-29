@@ -10,8 +10,9 @@ import { fillLogoPlaceholders, useOfficialLogoDataUrl } from '@/lib/design/logo-
 import { projectApi } from '@/lib/api-client'
 import type { ProjectSummary } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Pencil, LayoutTemplate, FolderOpen, Trash2, Copy, Loader2 } from 'lucide-react'
+import { Pencil, LayoutTemplate, FolderOpen, Trash2, Copy, Loader2, Search } from 'lucide-react'
 import { toast } from 'sonner'
 
 const TYPE_LABELS: Record<string, string> = {
@@ -38,6 +39,7 @@ function Thumb({ templateId }: { templateId: string }) {
 export function TemplatesView() {
   const { brand, openEditor } = useApp()
   const [tab, setTab] = useState('all')
+  const [searchQuery, setSearchQuery] = useState('')
   const [userTpls, setUserTpls] = useState<ProjectSummary[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -58,7 +60,13 @@ export function TemplatesView() {
     }
   }, [])
 
-  const builtin = tab === 'all' ? TEMPLATES : TEMPLATES.filter((t) => t.type === tab)
+  const normalizedQuery = searchQuery.trim().toLocaleLowerCase()
+  const builtin = (tab === 'all' ? TEMPLATES : TEMPLATES.filter((t) => t.type === tab)).filter((t) =>
+    !normalizedQuery || `${t.name} ${t.description} ${TYPE_LABELS[t.type] ?? t.type}`.toLocaleLowerCase().includes(normalizedQuery)
+  )
+  const filteredUserTemplates = userTpls.filter((p) =>
+    !normalizedQuery || `${p.name} ${p.type}`.toLocaleLowerCase().includes(normalizedQuery)
+  )
 
   const unsave = async (id: string) => {
     try {
@@ -85,6 +93,11 @@ export function TemplatesView() {
       <div>
         <h1 className="flex items-center gap-2 text-2xl font-bold"><LayoutTemplate className="h-6 w-6 text-amber-600" /> Templates</h1>
         <p className="text-sm text-muted-foreground">Professional starting points using your current brand. Customising a template creates your own editable copy.</p>
+      </div>
+
+      <div className="relative max-w-xl">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9" placeholder="Search templates by name or format…" aria-label="Search templates" />
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
@@ -117,19 +130,20 @@ export function TemplatesView() {
             </div>
           ))}
         </div>
+        {builtin.length === 0 && <div className="mt-3 rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">No built-in templates match this search. Try another term or choose All.</div>}
       </section>
 
       <section>
         <h2 className="mb-3 text-lg font-bold">Your saved templates</h2>
         {loading ? (
           <div className="flex h-20 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin" /></div>
-        ) : userTpls.length === 0 ? (
+        ) : filteredUserTemplates.length === 0 ? (
           <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-            Save any design as a template from My Designs → it will appear here for reuse.
+            {normalizedQuery ? 'No saved templates match this search.' : 'Save any design as a template from My Designs → it will appear here for reuse.'}
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-            {userTpls.map((p) => (
+            {filteredUserTemplates.map((p) => (
               <div key={p.id} className="overflow-hidden rounded-xl border bg-background transition hover:shadow-md">
                 <div className="flex aspect-[4/3] items-center justify-center bg-muted p-2">
                   {p.preview ? <img src={p.preview} alt={p.name} className="max-h-full max-w-full object-contain" /> : <FolderOpen className="h-6 w-6 text-muted-foreground" />}
