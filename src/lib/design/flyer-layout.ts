@@ -371,7 +371,7 @@ function composeFlyer(input: FlyerInput, size: { width: number; height: number; 
   if (galleryImages.length) {
     const gh = Math.max(S(80), photoBottom - photoTop)
     const gap = S(12)
-    const inset = S(5) // white mat inside each frame
+    // Keep photo cells transparent so source pixels sit directly on the flyer.
     const frames: { x: number; y: number; w: number; h: number }[] = []
     if (galleryImages.length === 1) {
       frames.push({ x: pad, y: photoTop, w: areaW, h: gh })
@@ -399,9 +399,13 @@ function composeFlyer(input: FlyerInput, size: { width: number; height: number; 
       }
     }
     frames.forEach((f, i) => {
-      els.push(el('rect', { name: `Photo frame ${i + 1}`, x: f.x, y: f.y, w: f.w, h: f.h, radius: S(8), fill: '#FFFFFF', stroke: th.dark ? '#3A4250' : '#DAD5C8', strokeWidth: 1, shadow: { color: '#000000', blur: 10, offsetX: 0, offsetY: 4 } }))
-      els.push(el('image', { name: `Photo ${i + 1}`, src: galleryImages[i], fit: 'contain', x: f.x + inset, y: f.y + inset, w: f.w - inset * 2, h: f.h - inset * 2, radius: S(4) }))
-      aspects.gallery[i] = (f.w - inset * 2) / (f.h - inset * 2)
+      const src = galleryImages[i]
+      if (src.startsWith('data:image/')) {
+        els.push(el('image', { name: `Photo ${i + 1}`, src, fit: 'contain', x: f.x, y: f.y, w: f.w, h: f.h, radius: 0 }))
+      } else {
+        warnings.push(`Photo ${i + 1} could not be loaded and was skipped. Re-upload it and try again.`)
+      }
+      aspects.gallery[i] = f.w / f.h
     })
   }
 
@@ -415,7 +419,12 @@ function composeFlyer(input: FlyerInput, size: { width: number; height: number; 
     els.push(el('rect', { name: 'Product card', x: pad, y: prodAreaTop, w: areaW, h: heroH, radius: S(14), fill: th.cardBg, shadow: { color: '#000000', blur: 18, offsetX: 0, offsetY: 8 } }))
     const imgH = pDef.imageDataUrl ? heroH * 0.62 : heroH * 0.5
     if (pDef.imageDataUrl) {
-      els.push(el('image', { name: `${pDef.name} image`, src: pDef.imageDataUrl, fit: 'contain', x: pad, y: prodAreaTop, w: areaW, h: imgH, radius: S(14) }))
+      if (pDef.imageDataUrl.startsWith('data:image/')) {
+        els.push(el('image', { name: `${pDef.name} image`, src: pDef.imageDataUrl, fit: 'contain', x: pad, y: prodAreaTop, w: areaW, h: imgH, radius: 0 }))
+      } else {
+        warnings.push(`${pDef.name || 'A product'} photo could not be loaded; a symbol placeholder is shown instead.`)
+        els.push(el('symbol', { name: 'Product symbol', symbol: pDef.symbol || 'tv', x: pad + areaW / 2 - S(60), y: prodAreaTop + imgH / 2 - S(60), w: S(120), h: S(120), fill: th.dark ? '#3A4250' : '#C9C4B4', symbolWeight: 'bold' }))
+      }
       aspects.products[0] = areaW / imgH
     } else {
       els.push(el('rect', { name: 'Image placeholder', x: pad, y: prodAreaTop, w: areaW, h: imgH, radius: S(14), fill: th.dark ? '#242A34' : '#EEEBE2' }))
@@ -455,7 +464,12 @@ function composeFlyer(input: FlyerInput, size: { width: number; height: number; 
       els.push(el('rect', { name: `${pDef.name} card`, x: cx, y: cy, w: cardW, h: cardH, radius: S(10), fill: th.cardBg, shadow: { color: '#000000', blur: 12, offsetX: 0, offsetY: 5 } }))
       const imgH = pDef.imageDataUrl ? cardH * 0.5 : cardH * 0.42
       if (pDef.imageDataUrl) {
-        els.push(el('image', { name: `${pDef.name} image`, src: pDef.imageDataUrl, fit: 'contain', x: cx, y: cy, w: cardW, h: imgH, radius: S(10) }))
+        if (pDef.imageDataUrl.startsWith('data:image/')) {
+          els.push(el('image', { name: `${pDef.name} image`, src: pDef.imageDataUrl, fit: 'contain', x: cx, y: cy, w: cardW, h: imgH, radius: 0 }))
+        } else {
+          warnings.push(`${pDef.name || 'A product'} photo could not be loaded; a symbol placeholder is shown instead.`)
+          els.push(el('symbol', { name: 'Product symbol', symbol: pDef.symbol || 'tv', x: cx + cardW / 2 - S(26), y: cy + imgH / 2 - S(26), w: S(52), h: S(52), fill: th.dark ? '#3A4250' : '#C9C4B4', symbolWeight: 'bold' }))
+        }
         aspects.products[i] = cardW / imgH
       } else {
         els.push(el('rect', { name: 'Image placeholder', x: cx, y: cy, w: cardW, h: imgH, radius: S(10), fill: th.dark ? '#242A34' : '#EEEBE2' }))

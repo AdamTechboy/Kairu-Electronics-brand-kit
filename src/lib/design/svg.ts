@@ -266,7 +266,8 @@ function renderElement(e: DesignElement, ctx: Ctx): string {
         const photoId = photoFilter(e, ctx)
         const fAttr = photoId ? ` filter="url(#${photoId})"` : ''
         const strokeAttr = stroke ? ` stroke="${stroke}" stroke-width="${num(sw)}"` : ''
-        body = `<image href="${e.src}" x="${num(e.x)}" y="${num(e.y)}" width="${num(e.w)}" height="${num(
+        const imageSrc = escapeXml(e.src)
+        body = `<image href="${imageSrc}" xlink:href="${imageSrc}" x="${num(e.x)}" y="${num(e.y)}" width="${num(e.w)}" height="${num(
           e.h
         )}" preserveAspectRatio="${preserve}"${clipAttr}${fAttr} ${strokeAttr} />`
       }
@@ -274,7 +275,8 @@ function renderElement(e: DesignElement, ctx: Ctx): string {
     }
     case 'qr': {
       if (e.src) {
-        body = `<image href="${e.src}" x="${num(e.x)}" y="${num(e.y)}" width="${num(e.w)}" height="${num(e.h)}" />`
+        const imageSrc = escapeXml(e.src)
+        body = `<image href="${imageSrc}" xlink:href="${imageSrc}" x="${num(e.x)}" y="${num(e.y)}" width="${num(e.w)}" height="${num(e.h)}" />`
       } else {
         body = `<rect x="${num(e.x)}" y="${num(e.y)}" width="${num(e.w)}" height="${num(e.h)}" fill="#ffffff" stroke="#999" /><text x="${num(
           cx

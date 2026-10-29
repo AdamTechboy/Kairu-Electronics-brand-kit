@@ -10,67 +10,77 @@ export interface CompressedImage {
 
 const MAX_BYTES = 6 * 1024 * 1024
 
-export async function compressImageFile(file: File, maxPx = 1600, quality = 0.86): Promise<CompressedImage> {
-  if (!file.type.startsWith('image/')) {
-    throw new Error('Please choose an image file (PNG, JPG or WebP).')
-  }
-  if (file.size > 20 * 1024 * 1024) {
-    throw new Error('That image is very large (over 20 MB). Please choose a smaller photo.')
-  }
+export async function compressImageFile(file: File, maxPx = 1600, quality = 0.86, maxBytes = MAX_BYTES): Promise<CompressedImage> {
+  if (!file.type.startsWith('image/')) throw new Error('Please choose an image file (PNG, JPG or WebP).')
+  if (file.size > 20 * 1024 * 1024) throw new Error('That image is very large (over 20 MB). Please choose a smaller photo.')
 
   const dataUrl = await readAsDataUrl(file)
-
-  // SVG (or any vector-ish source): rasterise through <img> for safety
   const img = await loadImage(dataUrl)
-  let { width, height } = img
-  const scale = Math.min(1, maxPx / Math.max(width, height))
-  width = Math.max(1, Math.round(width * scale))
-  height = Math.max(1, Math.round(height * scale))
+  const originalWidth = img.naturalWidth || img.width
+  const originalHeight = img.naturalHeight || img.height
+  if (!originalWidth || !originalHeight) throw new Error('The selected image has no readable dimensions.')
+  const scale = Math.min(1, maxPx / Math.max(originalWidth, originalHeight))
+  let dims = { width: Math.max(1, Math.round(originalWidth * scale)), height: Math.max(1, Math.round(originalHeight * scale)) }
+  let canvas = document.createElement('canvas')
+  let ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Your browser could not prepare this image.')
 
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const ctx = canvas.getContext('2d')!
-  // white matte for JPEG; keep transparency for PNG/WebP
-  if (file.type === 'image/jpeg') {
-    ctx.fillStyle = '#ffffff'
-    ctx.fillRect(0, 0, width, height)
-  }
-  ctx.drawImage(img, 0, 0, width, height)
-
-  const keepPng = file.type === 'image/png' || file.type === 'image/webp' || file.type === 'image/svg+xml'
-  const outMime = keepPng ? 'image/png' : 'image/jpeg'
-  let outUrl = canvas.toDataURL(outMime, quality)
-
-  // if still huge, step down quality/size
-  let q = quality
-  let dims = { width, height }
-  while (approxBytes(outUrl) > MAX_BYTES && Math.max(dims.width, dims.height) > 700) {
-    dims = { width: Math.round(dims.width * 0.8), height: Math.round(dims.height * 0.8) }
-    canvas.width = dims.width
-    canvas.height = dims.height
-    ctx.clearRect(0, 0, dims.width, dims.height)
-    if (outMime === 'image/jpeg') {
+  const vectorSource = file.type === 'image/svg+xml'
+  const inspectAlpha = !['image/jpeg', 'image/jpg'].includes(file.type)
+  let hasTransparency = vectorSource
+  const draw = (width: number, height: number, mime: string) => {
+    canvas.width = width
+    canvas.height = height
+    ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('Your browser could not prepare this image.')
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    if (mime === 'image/jpeg') {
       ctx.fillStyle = '#ffffff'
-      ctx.fillRect(0, 0, dims.width, dims.height)
+      ctx.fillRect(0, 0, width, height)
     }
-    ctx.drawImage(img, 0, 0, dims.width, dims.height)
-    q = Math.max(0.6, q - 0.12)
-    outUrl = canvas.toDataURL(outMime, q)
+    ctx.drawImage(img, 0, 0, width, height)
+    return ctx
   }
 
-  return {
-    dataUrl: outUrl,
-    width: dims.width,
-    height: dims.height,
-    mimeType: outMime,
-    size: approxBytes(outUrl),
+  let ctx2 = draw(dims.width, dims.height, 'image/png')
+  if (inspectAlpha && !vectorSource) {
+    try {
+      const pixels = ctx2.getImageData(0, 0, dims.width, dims.height).data
+      for (let i = 3; i < pixels.length; i += 4) {
+        if (pixels[i] < 255) { hasTransparency = true; break }
+      }
+    } catch {
+      // Preserve PNG when pixel inspection is blocked; never flatten unknown alpha.
+      hasTransparency = true
+    }
   }
+  const outMime = hasTransparency ? 'image/png' : 'image/jpeg'
+  let q = quality
+  let outUrl = outMime === 'image/png' ? canvas.toDataURL('image/png') : draw(dims.width, dims.height, outMime).canvas.toDataURL('image/jpeg', q)
+
+  while (approxBytes(outUrl) > maxBytes && Math.max(dims.width, dims.height) > 320) {
+    dims = { width: Math.max(1, Math.round(dims.width * 0.78)), height: Math.max(1, Math.round(dims.height * 0.78)) }
+    ctx2 = draw(dims.width, dims.height, outMime)
+    q = Math.max(0.42, q - 0.1)
+    outUrl = outMime === 'image/png' ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', q)
+  }
+  if (approxBytes(outUrl) > maxBytes) {
+    throw new Error('The image could not be compressed enough for reliable saving. Please choose a smaller image.')
+  }
+  return { dataUrl: outUrl, width: dims.width, height: dims.height, mimeType: outMime, size: approxBytes(outUrl) }
 }
-
 function approxBytes(dataUrl: string): number {
   const base64 = dataUrl.split(',')[1] ?? ''
   return Math.round((base64.length * 3) / 4)
+}
+
+export async function compressImageDataUrl(dataUrl: string, fileName = 'image.png', maxPx = 1000, quality = 0.82, maxBytes = 300_000): Promise<CompressedImage> {
+  const response = await fetch(dataUrl)
+  const blob = await response.blob()
+  const type = blob.type || (dataUrl.startsWith('data:image/png') ? 'image/png' : 'image/jpeg')
+  const file = new File([blob], fileName, { type })
+  return compressImageFile(file, maxPx, quality, maxBytes)
 }
 
 function readAsDataUrl(file: File): Promise<string> {
