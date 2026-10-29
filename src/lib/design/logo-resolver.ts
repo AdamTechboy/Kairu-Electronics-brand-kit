@@ -123,7 +123,7 @@ export function useOfficialLogoDataUrl(brand: BrandSettings, scope: OfficialLogo
       apply(hit)
       return
     }
-    getOfficialLogoDataUrl(brand).then(apply)
+    getOfficialLogoDataUrl(brand, scope).then(apply)
     return () => {
       cancelled = true
     }
