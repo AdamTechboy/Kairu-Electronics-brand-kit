@@ -98,7 +98,8 @@ export function DocumentsView() {
               <div className="space-y-1.5 sm:col-span-2">
                 <Label>What are you preparing?</Label>
                 <Select value={form.kind} onValueChange={(v) => setForm((old) => ({ ...freshDocument(v as BusinessDocumentKind), customerName: old.customerName, customerPhone: old.customerPhone, customerEmail: old.customerEmail, customerAddress: old.customerAddress, destinationCityState: old.destinationCityState, items: old.items, paymentMethod: old.paymentMethod, deliveryMethod: old.deliveryMethod, shippingReference: old.shippingReference, amountPaid: old.amountPaid, notes: old.notes, signerName: old.signerName, footerNote: old.footerNote }))}>
-                  {Object.entries(BUSINESS_DOCUMENT_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                  <SelectTrigger><SelectValue placeholder="Choose a document type" /></SelectTrigger>
+                  <SelectContent>{Object.entries(BUSINESS_DOCUMENT_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5"><Label>Document number</Label><Input value={form.documentNumber} onChange={(e) => set('documentNumber', e.target.value)} placeholder="RCT-20261029-001" /></div>
