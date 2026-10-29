@@ -22,6 +22,8 @@ import { ProductLibraryView } from './views/product-library'
 import { TemplatesView } from './views/templates'
 import { ExportCentreView } from './views/export-centre'
 import { AccountView } from './views/account'
+import { DocumentsView } from './views/documents'
+import { BackgroundRemoverView } from './views/background-remover'
 import { DesignEditor } from '@/components/studio/design-editor'
 import { DEFAULT_BRAND } from '@/lib/brand'
 
@@ -158,6 +160,12 @@ export function AppRoot() {
       break
     case 'account':
       content = <AccountView />
+      break
+    case 'documents':
+      content = <DocumentsView />
+      break
+    case 'removebg':
+      content = <BackgroundRemoverView />
       break
     default:
       content = <DashboardView />
