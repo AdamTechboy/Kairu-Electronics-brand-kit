@@ -256,13 +256,28 @@ export function ImageCropDialog({ open, imageSrc, fileName, frameAspect, onCance
     const ctx = canvas.getContext('2d')!
     ctx.imageSmoothingQuality = 'high'
     ctx.drawImage(rotCanvas, rx, ry, rw, rh, 0, 0, outW, outH)
-    // 3) encode: pick the smaller of PNG / JPEG at the chosen quality
+    // 3) Prefer JPEG only when the cropped pixels are fully opaque. Encoding a
+    // transparent PNG/WebP crop as JPEG would silently replace transparency with
+    // a solid background, so keep PNG whenever any output pixel has alpha < 255.
     let dataUrl = canvas.toDataURL('image/png')
     if (quality < 100) {
       try {
-        const jpeg = canvas.toDataURL('image/jpeg', quality / 100)
-        if (jpeg.length < dataUrl.length) dataUrl = jpeg
-      } catch {}
+        const pixels = ctx.getImageData(0, 0, outW, outH).data
+        let hasTransparency = false
+        for (let i = 3; i < pixels.length; i += 4) {
+          if (pixels[i] < 255) {
+            hasTransparency = true
+            break
+          }
+        }
+        if (!hasTransparency) {
+          const jpeg = canvas.toDataURL('image/jpeg', quality / 100)
+          if (jpeg.length < dataUrl.length) dataUrl = jpeg
+        }
+      } catch {
+        // If pixel inspection is blocked, preserve the PNG rather than risk
+        // flattening transparent pixels into JPEG.
+      }
     }
     onApply({
       dataUrl,
