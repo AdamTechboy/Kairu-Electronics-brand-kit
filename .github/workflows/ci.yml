@@ -5,6 +5,11 @@ on:
     branches: [main]
   push:
     branches: [main, "fix/**"]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
