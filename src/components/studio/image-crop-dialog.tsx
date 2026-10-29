@@ -135,10 +135,16 @@ export function ImageCropDialog({ open, imageSrc, fileName, frameAspect, onCance
     const a = ASPECTS[idx]
     const aspect = a.value === -1 ? (frameAspect ?? null) : a.value
     if (boxRef.current.w && boxRef.current.h) {
-      // refit around the box centre using the current (rotated) dims
-      const w = boxRef.current.w
-      const h = boxRef.current.h
-      setBox(computeBox(w, h, aspect))
+      // Fit the new aspect ratio inside the current selection and preserve its
+      // position. computeBox returns coordinates relative to (0, 0), so offset
+      // the result back to the selection's centre instead of jumping to top-left.
+      const current = boxRef.current
+      const fitted = computeBox(current.w, current.h, aspect)
+      setBox({
+        ...fitted,
+        x: Math.round(current.x + (current.w - fitted.w) / 2),
+        y: Math.round(current.y + (current.h - fitted.h) / 2),
+      })
     }
   }, [frameAspect])
 
