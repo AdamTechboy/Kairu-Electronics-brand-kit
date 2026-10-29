@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -53,9 +53,9 @@ model DesignProject {
   name       String
   type       String // logo | letterhead | business-card | complimentary-card | flyer | social-post | document | other
   doc        String // JSON DesignDocument (editable source of truth)
-  preview    String           @default("") // small PNG data-url thumbnail
+  preview    String           @default("")
   isTemplate Boolean          @default(false)
-  templateOf String? // which builtin style it came from
+  templateOf String?
   archived   Boolean          @default(false)
   createdAt  DateTime         @default(now())
   updatedAt  DateTime         @updatedAt
@@ -72,25 +72,25 @@ model ProjectVersion {
   id        String        @id @default(cuid())
   projectId String
   label     String        @default("Saved version")
-  doc       String // JSON DesignDocument snapshot
+  doc       String
   createdAt DateTime      @default(now())
   project   DesignProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId, createdAt])
 }
 
-// Uploaded media assets (images) stored as data-urls in SQLite with metadata
+// Uploaded media assets (images) stored as data-urls with metadata
 model Asset {
   id        String   @id @default(cuid())
   userId    String
-  projectId String? // optional association
-  kind      String   @default("image") // image | logo-reference | product | background
+  projectId String?
+  kind      String   @default("image")
   filename  String
   mimeType  String
-  size      Int // bytes of decoded data
+  size      Int
   width     Int      @default(0)
   height    Int      @default(0)
-  data      String // data-url payload
+  data      String
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -104,11 +104,11 @@ model Product {
   name          String
   category      String   @default("")
   description   String   @default("")
-  price         String   @default("") // kept as string to allow "" or formatted values
+  price         String   @default("")
   availability  String   @default("In Stock")
   stockRef      String   @default("")
   notes         String   @default("")
-  imageAssetIds String   @default("[]") // JSON array of Asset ids
+  imageAssetIds String   @default("[]")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -123,7 +123,7 @@ model ExportRecord {
   projectId   String?
   projectName String         @default("")
   projectType String         @default("")
-  format      String // pdf | png | jpg | svg | zip | print
+  format      String
   fileName    String
   width       Int            @default(0)
   height      Int            @default(0)
