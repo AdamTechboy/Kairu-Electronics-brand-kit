@@ -126,7 +126,7 @@ bun run build       # produces a self-contained .next/standalone/
 bun run start       # NODE_ENV=production, honours PORT (default 3000), logs to server.log
 ```
 
-For Vercel, the `vercel-build` script runs `prisma migrate deploy` before the production build. The committed migrations create the PostgreSQL schema. For a manual deployment, run `bun run db:migrate:deploy` with the correct `DATABASE_URL` before starting the app.
+For Vercel, the `vercel-build` script runs `prisma migrate deploy` on Production deployments before the build; it skips migrations on Preview deployments to avoid allowing a preview build to mutate the production database. The committed migrations create the PostgreSQL schema. For a manual deployment, run `bun run db:migrate:deploy` with the correct `DATABASE_URL` before starting the app.
 
 Set `AUTH_SECRET` explicitly in every production environment (32+ random characters). Production authentication intentionally fails closed when this secret is missing; it will not generate a per-instance file secret.
 
