@@ -1,3 +1,4 @@
+import { describe, expect, test } from 'bun:test'
 import { removeConnectedBorderColor } from '../src/lib/background-removal'
 import { DEFAULT_BRAND } from '../src/lib/brand'
 import { buildBusinessDocument, calculateBusinessDocumentTotals } from '../src/lib/design/business-documents'
@@ -88,9 +89,9 @@ describe('flyer image layout and SVG image references', () => {
 
   test('XML-escapes href values in rendered images', () => {
     const doc = {
-      version: 1 as const, width: 100, height: 100, background: null,
+      version: 1, width: 100, height: 100, background: null,
       pages: [{ id: 'page', name: 'page', background: null, elements: [{
-        id: 'image', type: 'image' as const, x: 0, y: 0, w: 80, h: 80, src: 'https://example.test/image.png?x=1&y=2',
+        id: 'image', type: 'image', x: 0, y: 0, w: 80, h: 80, src: 'https://example.test/image.png?x=1&y=2',
       }] }],
     }
     const svg = docToSvg(doc, { palette: DEFAULT_BRAND.palette })
