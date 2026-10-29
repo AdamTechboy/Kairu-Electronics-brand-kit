@@ -9,6 +9,7 @@ export const metadata: Metadata = {
     "Private design studio for Muhammad Kairu Electronics: edit the logo, generate product flyers with prices and availability, design business cards, complimentary cards, letterheads and social posts, and download real print-ready files.",
   keywords: ["brand kit", "logo editor", "flyer generator", "Muhammad Kairu Electronics", "solar energy", "electronics retail"],
   authors: [{ name: "Muhammad Kairu Electronics" }],
+  icons: { icon: "/api/site-logo", apple: "/api/site-logo" },
 };
 
 export const viewport: Viewport = {
