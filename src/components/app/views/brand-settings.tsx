@@ -93,7 +93,6 @@ export function BrandSettingsView() {
         if (!officialLogo) throw new Error('Brand settings were saved, but the selected logo could not be rendered.')
         const { projects } = await projectApi.list({ archived: false, limit: 500 })
         for (const summary of projects) {
-          if (summary.type === 'logo') continue
           try {
             const { project } = await projectApi.get(summary.id)
             const currentDoc = project.doc as DesignDocument
