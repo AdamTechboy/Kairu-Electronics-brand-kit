@@ -416,8 +416,9 @@ function composeFlyer(input: FlyerInput, size: { width: number; height: number; 
   if (products.length === 1) {
     const pDef = products[0]
     const heroH = Math.min(Math.max(S(120), prodAreaH), W * 0.62)
-    els.push(el('rect', { name: 'Product card', x: pad, y: prodAreaTop, w: areaW, h: heroH, radius: S(14), fill: th.cardBg, shadow: { color: '#000000', blur: 18, offsetX: 0, offsetY: 8 } }))
     const imgH = pDef.imageDataUrl ? heroH * 0.62 : heroH * 0.5
+    // Keep the photo region free of card fill so transparent PNG pixels reveal the flyer background.
+    els.push(el('rect', { name: 'Product info panel', x: pad, y: prodAreaTop + imgH, w: areaW, h: Math.max(0, heroH - imgH), radius: S(12), fill: th.cardBg, shadow: { color: '#000000', blur: 14, offsetX: 0, offsetY: 5 } }))
     if (pDef.imageDataUrl) {
       if (pDef.imageDataUrl.startsWith('data:image/')) {
         els.push(el('image', { name: `${pDef.name} image`, src: pDef.imageDataUrl, fit: 'contain', x: pad, y: prodAreaTop, w: areaW, h: imgH, radius: 0 }))
@@ -461,8 +462,9 @@ function composeFlyer(input: FlyerInput, size: { width: number; height: number; 
       const row = Math.floor(i / cols)
       const cx = pad + col * (cardW + gap)
       const cy = prodAreaTop + row * (cardH + gap)
-      els.push(el('rect', { name: `${pDef.name} card`, x: cx, y: cy, w: cardW, h: cardH, radius: S(10), fill: th.cardBg, shadow: { color: '#000000', blur: 12, offsetX: 0, offsetY: 5 } }))
       const imgH = pDef.imageDataUrl ? cardH * 0.5 : cardH * 0.42
+      // A transparent photo area lets PNG cutouts sit naturally on the flyer background.
+      els.push(el('rect', { name: `${pDef.name} info panel`, x: cx, y: cy + imgH, w: cardW, h: Math.max(0, cardH - imgH), radius: S(8), fill: th.cardBg, shadow: { color: '#000000', blur: 10, offsetX: 0, offsetY: 4 } }))
       if (pDef.imageDataUrl) {
         if (pDef.imageDataUrl.startsWith('data:image/')) {
           els.push(el('image', { name: `${pDef.name} image`, src: pDef.imageDataUrl, fit: 'contain', x: cx, y: cy, w: cardW, h: imgH, radius: 0 }))
