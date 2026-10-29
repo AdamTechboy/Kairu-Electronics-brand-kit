@@ -111,6 +111,8 @@ export const brandUpdateSchema = z.object({
   openingHours: z.string().max(300).optional(),
   extraInfo: z.string().max(1000).optional(),
   logoProjectId: z.string().max(80).nullable().optional(),
+  logoApplyToSite: z.boolean().optional(),
+  logoApplyToNewDesigns: z.boolean().optional(),
   palette: paletteSchema.optional(),
   typography: z
     .object({ headingFont: z.string().max(80), bodyFont: z.string().max(80) })

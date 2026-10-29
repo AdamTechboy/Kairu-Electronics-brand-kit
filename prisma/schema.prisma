@@ -40,6 +40,8 @@ model BrandSettings {
   openingHours     String   @default("")
   extraInfo        String   @default("")
   logoProjectId    String? // id of the DesignProject used as the official logo
+  logoApplyToSite Boolean @default(true)
+  logoApplyToNewDesigns Boolean @default(true)
   palette          String   @default("{}") // JSON Palette
   typography       String   @default("{}") // JSON Typography
   updatedAt        DateTime @updatedAt

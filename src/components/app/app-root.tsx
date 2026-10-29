@@ -22,6 +22,8 @@ import { ProductLibraryView } from './views/product-library'
 import { TemplatesView } from './views/templates'
 import { ExportCentreView } from './views/export-centre'
 import { AccountView } from './views/account'
+import { DocumentsView } from './views/documents'
+import { BackgroundRemoverView } from './views/background-remover'
 import { DesignEditor } from '@/components/studio/design-editor'
 import { DEFAULT_BRAND } from '@/lib/brand'
 
@@ -104,7 +106,7 @@ export function AppRoot() {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-[#141a26]">
         <div className="text-center text-white">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#F5A623] text-xl font-black text-[#1F2A44]">MK</div>
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl bg-white/5 p-1"><img src="/api/site-logo" alt="Official business logo" className="h-full w-full object-contain" /></div>
           <div className="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-[#F5A623] border-t-transparent" />
           <p className="mt-3 text-sm text-white/60">Opening your design studio…</p>
         </div>
@@ -158,6 +160,12 @@ export function AppRoot() {
       break
     case 'account':
       content = <AccountView />
+      break
+    case 'documents':
+      content = <DocumentsView />
+      break
+    case 'removebg':
+      content = <BackgroundRemoverView />
       break
     default:
       content = <DashboardView />

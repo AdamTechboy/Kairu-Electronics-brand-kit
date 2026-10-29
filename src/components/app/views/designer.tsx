@@ -12,7 +12,7 @@ import { fillLogoPlaceholders, useOfficialLogoDataUrl } from '@/lib/design/logo-
 import { el, newPage, type ProjectType, type DesignDocument } from '@/lib/design/types'
 import { compressImageFile } from '@/components/studio/media-utils'
 import { Button } from '@/components/ui/button'
-import { Pencil, FileText, IdCard, MessageSquareQuote, Share2, FolderOpen, Upload, Loader2 } from 'lucide-react'
+import { Pencil, FileText, IdCard, MessageSquareQuote, Share2, FolderOpen, Upload, Loader2, ReceiptText } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { projectApi } from '@/lib/api-client'
 import type { ProjectSummary } from '@/lib/api-client'
@@ -42,7 +42,7 @@ function TemplateThumb({ templateId }: { templateId: string }) {
 }
 
 export function DesignerView() {
-  const { viewParam, brand, openEditor } = useApp()
+  const { viewParam, brand, openEditor, navigate } = useApp()
   const type = (viewParam || 'letterhead') as ProjectType
   const meta = TYPE_META[type] ?? TYPE_META.letterhead
   const templates = TEMPLATES.filter((t) => t.type === type)
@@ -102,6 +102,7 @@ export function DesignerView() {
       <div>
         <h1 className="flex items-center gap-2 text-2xl font-bold"><Icon className="h-6 w-6 text-amber-600" /> {meta.title}</h1>
         <p className="text-sm text-muted-foreground">{meta.blurb} Your business details from Brand Settings are filled in automatically.</p>
+        {type === 'letterhead' && <Button variant="outline" className="mt-3 gap-2" onClick={() => navigate('documents')}><ReceiptText className="h-4 w-4" /> Write a letter, invoice or receipt</Button>}
       </div>
 
       <section>

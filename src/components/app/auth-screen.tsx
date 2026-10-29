@@ -48,7 +48,7 @@ export function AuthScreen({ hasOwner, onAuthed }: Props) {
         <div className="pointer-events-none absolute -bottom-32 -left-24 h-96 w-96 rounded-full bg-[#F5A623]/10 blur-2xl" />
         <div className="relative">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#F5A623] font-black text-[#1F2A44]">MK</div>
+            <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-white/5 p-1"><img src="/api/site-logo" alt="Official business logo" className="h-full w-full object-contain" /></div>
             <div>
               <p className="text-lg font-bold leading-tight">Muhammad Kairu Electronics</p>
               <p className="text-xs text-white/60">Brand Kit &amp; Design Studio</p>

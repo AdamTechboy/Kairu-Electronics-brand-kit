@@ -14,6 +14,8 @@ export interface BrandSettingsJSON {
   openingHours: string
   extraInfo: string
   logoProjectId: string | null
+  logoApplyToSite: boolean
+  logoApplyToNewDesigns: boolean
   palette: { primary: string; secondary: string; accent: string; dark: string; light: string }
   typography: { headingFont: string; bodyFont: string }
 }
@@ -32,6 +34,8 @@ export interface BrandRow {
   openingHours: string
   extraInfo: string
   logoProjectId: string | null
+  logoApplyToSite: boolean
+  logoApplyToNewDesigns: boolean
   palette: string
   typography: string
 }
@@ -58,6 +62,8 @@ export function parseBrand(row: BrandRow): BrandSettingsJSON {
     openingHours: row.openingHours,
     extraInfo: row.extraInfo,
     logoProjectId: row.logoProjectId,
+    logoApplyToSite: row.logoApplyToSite !== false,
+    logoApplyToNewDesigns: row.logoApplyToNewDesigns !== false,
     palette: { ...DEFAULT_BRAND.palette, ...safeJson(row.palette, {}) },
     typography: { ...DEFAULT_BRAND.typography, ...safeJson(row.typography, {}) },
   }
@@ -73,6 +79,8 @@ export function defaultBrandRowData() {
     address: DEFAULT_BRAND.address,
     phones: JSON.stringify(DEFAULT_BRAND.phones),
     socials: JSON.stringify(DEFAULT_BRAND.socials),
+    logoApplyToSite: true,
+    logoApplyToNewDesigns: true,
     palette: JSON.stringify(DEFAULT_BRAND.palette),
     typography: JSON.stringify(DEFAULT_BRAND.typography),
   }

@@ -4,13 +4,14 @@
 // sticky footer, and the main content area.
 
 import { useState } from 'react'
+import { useOfficialLogoDataUrl } from '@/lib/design/logo-resolver'
 import { useApp, type ViewId } from './app-context'
 import { authApi, forgetLocalSession } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import {
   LayoutDashboard, Palette, Settings2, Sparkles, FileImage, FileText, IdCard, MessageSquareQuote,
-  Share2, LayoutTemplate, Package, FolderOpen, Download, UserRound, Menu, LogOut, PanelsTopLeft,
+  Share2, LayoutTemplate, Package, FolderOpen, Download, UserRound, Menu, LogOut, PanelsTopLeft, ReceiptText, Eraser,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -25,6 +26,8 @@ const CREATE: NavItem[] = [
   { id: 'logo-studio', label: 'Logo Studio', icon: Sparkles },
   { id: 'flyer', label: 'Flyer Generator', icon: FileImage },
   { id: 'designer', label: 'Letterhead Designer', icon: FileText, param: 'letterhead' },
+  { id: 'documents', label: 'Documents & Receipts', icon: ReceiptText },
+  { id: 'removebg', label: 'Background Remover', icon: Eraser },
   { id: 'designer', label: 'Business Card', icon: IdCard, param: 'business-card' },
   { id: 'designer', label: 'Complimentary Card', icon: MessageSquareQuote, param: 'complimentary-card' },
   { id: 'designer', label: 'Social Media Post', icon: Share2, param: 'social-post' },
@@ -92,8 +95,13 @@ function NavSections({ current, currentParam, onNavigate }: { current: ViewId; c
   )
 }
 
+function BrandMark({ src, initials, size = 'h-9 w-9' }: { src: string | null; initials: string; size?: string }) {
+  return src ? <span className={`flex ${size} shrink-0 items-center justify-center overflow-hidden rounded-lg bg-transparent`}><img src={src} alt="Official business logo" className="h-full w-full object-contain" /></span> : <span className={`flex ${size} shrink-0 items-center justify-center rounded-lg bg-[#1F2A44] font-black text-[#F5A623]`}>{initials}</span>
+}
+
 export function Shell({ children }: { children: React.ReactNode }) {
   const { brand, user, view, viewParam, navigate } = useApp()
+  const officialLogo = useOfficialLogoDataUrl(brand, 'site')
   const [mobileOpen, setMobileOpen] = useState(false)
 
   const logout = async () => {
@@ -123,7 +131,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <SheetContent side="left" className="w-72 overflow-y-auto p-4">
             <SheetHeader className="p-0 pb-3">
               <SheetTitle className="flex items-center gap-2 text-sm">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#1F2A44] font-black text-[#F5A623]">{initials}</span>
+                <BrandMark src={officialLogo} initials={initials} size="h-8 w-8" />
                 {brand.businessName}
               </SheetTitle>
             </SheetHeader>
@@ -139,7 +147,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </SheetContent>
         </Sheet>
         <div className="flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-[#1F2A44] text-[11px] font-black text-[#F5A623]">{initials}</span>
+          <BrandMark src={officialLogo} initials={initials} size="h-7 w-7" />
           <span className="text-sm font-bold">{brand.businessName}</span>
         </div>
       </header>
@@ -148,7 +156,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         {/* desktop sidebar */}
         <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r bg-background lg:flex">
           <div className="flex items-center gap-2.5 border-b px-4 py-4">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#1F2A44] text-xs font-black text-[#F5A623]">{initials}</span>
+            <BrandMark src={officialLogo} initials={initials} size="h-9 w-9" />
             <div className="min-w-0">
               <p className="truncate text-sm font-bold leading-tight">{brand.businessName}</p>
               <p className="text-[11px] text-muted-foreground">Design Studio</p>

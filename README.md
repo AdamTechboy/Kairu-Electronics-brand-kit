@@ -6,7 +6,7 @@ A single-tenant brand kit and design studio for **Muhammad Kairu Electronics** (
 
 - **Logo Studio** — start from templates or a blank canvas, edit with drag/resize/rotate, layers panel, undo/redo, and **editable logo variants** (primary, symbol-only, horizontal, stacked, monochrome) plus an **export wizard** (format, scale, transparency, paper size, crop marks).
 - **Brand Settings & Brand Kit** — persistent business profile (name, address, phones, socials, palette, typography) that auto-fills every design; one-click **brand-kit ZIP** download (SVG + PNG@2x per variant, `brand-info.json`, README).
-- **Letterhead Designer** — A4 letterhead with brand header/footer blocks and exact-size PDF export.
+- **Letterhead & Document Desk** — write letters, custom printable documents, invoices, quotations, delivery notes and receipts with customer/shipping details, line items, payment amounts and Naira totals; edit or download print-ready PDFs.
 - **Business Card Designer** — front **and** back pages, standard card sizes, crop marks for print.
 - **Complimentary Card Designer** — branded voucher/thank-you cards.
 - **Multi-Image Flyer Generator** — a layout engine that arranges multiple product photos, prices (₦ formatted), availability badges and brand blocks into poster/ flyer pages; step-by-step wizard.
@@ -14,6 +14,8 @@ A single-tenant brand kit and design studio for **Muhammad Kairu Electronics** (
 - **Product Library** — reusable catalogue (name, category, price, availability, notes, images) feeding the flyer wizard and designs.
 - **My Designs** — all projects with thumbnails, **revision history (versions)**, archive, duplicate and **restore**.
 - **Export Centre** — history of every export (format, size, scale, paper size) with re-download context.
+- **Background Remover** — authenticated background-removal studio with a transparent PNG preview, download and editor hand-off.
+- **Official Logo Deployment** — import the real logo, preserve it as a transformable image layer, and control use in site branding, future designs and existing marked placeholders.
 - **AI Assistant** (server-side via z-ai-web-dev-sdk):
   - LLM design assistant that proposes document edits **with a preview you explicitly accept or reject**;
   - AI **image generation** (several aspect ratios);

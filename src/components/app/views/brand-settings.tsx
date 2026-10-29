@@ -2,10 +2,14 @@
 
 // Brand Settings: persistent business profile + brand identity controls.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../app-context'
 import { brandApi, projectApi } from '@/lib/api-client'
 import type { ProjectSummary } from '@/lib/api-client'
+import { compressImageFile } from '@/components/studio/media-utils'
+import { el, newPage, type DesignDocument } from '@/lib/design/types'
+import { makeThumbnail } from '@/lib/export/exporter'
+import { clearOfficialLogoCache, fillLogoPlaceholders, getOfficialLogoDataUrl } from '@/lib/design/logo-resolver'
 import type { BrandSettings, SocialHandle } from '@/lib/brand'
 import { PALETTE_SUGGESTIONS } from '@/lib/design/colors'
 import { FONT_OPTIONS } from '@/lib/design/types'
@@ -15,15 +19,19 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { QuickColorInput } from '@/components/studio/color-picker'
 import { toast } from 'sonner'
-import { Save, Plus, Trash2, Loader2, Eye, Phone } from 'lucide-react'
+import { Save, Plus, Trash2, Loader2, Eye, Phone, ShieldCheck, Upload } from 'lucide-react'
 
 export function BrandSettingsView() {
   const { brand, reloadBrand, navigate } = useApp()
   const [form, setForm] = useState<BrandSettings>(brand)
   const [saving, setSaving] = useState(false)
   const [logoProjects, setLogoProjects] = useState<ProjectSummary[]>([])
+  const [uploadingLogo, setUploadingLogo] = useState(false)
+  const [applyExistingSaved, setApplyExistingSaved] = useState(false)
+  const logoUploadRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => setForm(brand), [brand])
 
@@ -35,14 +43,76 @@ export function BrandSettingsView() {
 
   const set = <K extends keyof BrandSettings>(k: K, v: BrandSettings[K]) => setForm((f) => ({ ...f, [k]: v }))
 
-  const save = async () => {
-    setSaving(true)
+  const uploadOfficialLogo = async (file: File | undefined) => {
+    if (!file || uploadingLogo) return
+    setUploadingLogo(true)
     try {
-      await brandApi.update(form)
-      await reloadBrand()
-      toast.success('Brand settings saved. New designs will use this information.')
+      const compressed = await compressImageFile(file, 1400, 0.86, 1_200_000)
+      const doc: DesignDocument = {
+        version: 1, width: 1000, height: 1000, background: null,
+        pages: [{ ...newPage('Uploaded official logo', null), elements: [
+          el('image', { name: 'Uploaded logo artwork', src: compressed.dataUrl, x: 70, y: 70, w: 860, h: 860, fit: 'contain', radius: 0 }),
+        ] }],
+        meta: { type: 'logo', notes: 'Imported official image. It remains a movable, resizable and rotatable image layer; add editable text and vector shapes separately in Logo Studio.' },
+      }
+      const name = `${form.businessName || 'Business'} Official Logo`.slice(0, 120)
+      const preview = await makeThumbnail(doc, form.palette, 420)
+      const { project } = await projectApi.create({ name, type: 'logo', doc, preview })
+      set('logoProjectId', project.id)
+      set('logoApplyToSite', true)
+      set('logoApplyToNewDesigns', true)
+      const { projects } = await projectApi.list({ type: 'logo', templates: 'exclude', archived: false })
+      setLogoProjects(projects)
+      toast.success('Logo imported as a transformable image layer. Choose where to apply it, then commit changes.')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not save brand settings')
+      toast.error(err instanceof Error ? err.message : 'Could not upload the official logo')
+    } finally {
+      setUploadingLogo(false)
+      if (logoUploadRef.current) logoUploadRef.current.value = ''
+    }
+  }
+
+  const save = async (applyEverywhere = false) => {
+    if ((applyEverywhere || applyExistingSaved) && !form.logoProjectId) {
+      toast.error('Choose or upload an official logo before applying it to saved designs.')
+      return
+    }
+    setSaving(true)
+    let updated = 0
+    let skipped = 0
+    try {
+      const nextForm: BrandSettings = applyEverywhere
+        ? { ...form, logoApplyToSite: true, logoApplyToNewDesigns: true }
+        : form
+      const { brand: savedBrand } = await brandApi.update(nextForm)
+      setForm(savedBrand)
+      clearOfficialLogoCache()
+      await reloadBrand()
+      if ((applyExistingSaved || applyEverywhere) && savedBrand.logoProjectId) {
+        const officialLogo = await getOfficialLogoDataUrl({ ...savedBrand, logoApplyToNewDesigns: true }, 'always')
+        if (!officialLogo) throw new Error('Brand settings were saved, but the selected logo could not be rendered.')
+        const { projects } = await projectApi.list({ archived: false, limit: 500 })
+        for (const summary of projects) {
+          try {
+            const { project } = await projectApi.get(summary.id)
+            const currentDoc = project.doc as DesignDocument
+            const updatedDoc = fillLogoPlaceholders(currentDoc, officialLogo, true)
+            if (updatedDoc === currentDoc) continue
+            const preview = await makeThumbnail(updatedDoc, savedBrand.palette, 420)
+            await projectApi.update(summary.id, { doc: updatedDoc, preview, snapshot: true, versionLabel: 'Applied official logo' })
+            updated += 1
+          } catch {
+            skipped += 1
+          }
+        }
+        setApplyExistingSaved(false)
+      }
+      const scopeMessage = applyEverywhere
+        ? 'Site logo and future designs are enabled; marked logo placeholders in saved designs were refreshed.'
+        : 'Selected brand settings saved.'
+      toast.success(`${scopeMessage} Updated ${updated} saved design(s).${skipped ? ` ${skipped} design(s) could not be updated.` : ''}`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not commit brand changes')
     } finally {
       setSaving(false)
     }
@@ -69,7 +139,7 @@ export function BrandSettingsView() {
         <div className="flex gap-2">
           <Button variant="outline" className="gap-2" onClick={() => navigate('brand-kit')}><Eye className="h-4 w-4" /> Preview Brand Kit</Button>
           <Button className="gap-2 bg-[#1F2A44] hover:bg-[#2a3a5c]" onClick={() => void save()} disabled={saving}>
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save settings
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Commit changes
           </Button>
         </div>
       </div>
@@ -156,35 +226,44 @@ export function BrandSettingsView() {
         </CardContent>
       </Card>
 
-      {/* official logo */}
+      {/* official logo and application targets */}
       <Card>
-        <CardHeader><CardTitle className="text-base">Official logo</CardTitle></CardHeader>
-        <CardContent>
+        <CardHeader>
+          <CardTitle className="text-base">Official logo &amp; application targets</CardTitle>
+          <p className="text-sm text-muted-foreground">Upload the real business logo or choose a saved logo project. Imported artwork stays a transformable image layer in Logo Studio.</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            <input ref={logoUploadRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={(e) => { void uploadOfficialLogo(e.target.files?.[0]) }} />
+            <Button variant="outline" className="gap-2" onClick={() => logoUploadRef.current?.click()} disabled={uploadingLogo}>
+              {uploadingLogo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Upload official logo
+            </Button>
+            <Button variant="outline" onClick={() => navigate('logo-studio')}>Open Logo Studio</Button>
+          </div>
           {logoProjects.length === 0 ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed p-4">
-              <p className="text-sm text-muted-foreground">No logo projects yet. Create one in the Logo Studio, then select it here.</p>
-              <Button size="sm" onClick={() => navigate('logo-studio')}>Open Logo Studio</Button>
-            </div>
+            <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">No saved logos yet. Upload one or create it in Logo Studio.</div>
           ) : (
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
-              <button
-                onClick={() => set('logoProjectId', null)}
-                className={`aspect-square rounded-xl border-2 p-2 text-[11px] ${!form.logoProjectId ? 'border-amber-500 bg-amber-50' : 'hover:bg-muted'}`}
-              >
-                No official logo
-              </button>
+              <button type="button" onClick={() => set('logoProjectId', null)} className={`aspect-square rounded-xl border-2 p-2 text-[11px] ${!form.logoProjectId ? 'border-amber-500 bg-amber-50' : 'hover:bg-muted'}`}>No official logo</button>
               {logoProjects.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => set('logoProjectId', p.id)}
-                  className={`aspect-square overflow-hidden rounded-xl border-2 bg-muted p-1 transition ${form.logoProjectId === p.id ? 'border-amber-500 ring-2 ring-amber-200' : 'hover:border-amber-300'}`}
-                  title={p.name}
-                >
+                <button type="button" key={p.id} onClick={() => set('logoProjectId', p.id)} className={`aspect-square overflow-hidden rounded-xl border-2 bg-transparent p-1 transition ${form.logoProjectId === p.id ? 'border-amber-500 ring-2 ring-amber-200' : 'hover:border-amber-300'}`} title={p.name}>
                   {p.preview ? <img src={p.preview} alt={p.name} className="h-full w-full object-contain" /> : <span className="text-[10px]">{p.name}</span>}
                 </button>
               ))}
             </div>
           )}
+          <div className="rounded-xl border p-4">
+            <p className="mb-3 text-sm font-semibold">Where should the logo be used?</p>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-4"><div><p className="text-sm font-medium">Site logo / navigation / favicon</p><p className="text-xs text-muted-foreground">Use the selected logo for the MK badge and site icon.</p></div><Switch checked={form.logoApplyToSite !== false} onCheckedChange={(v) => set('logoApplyToSite', v)} /></div>
+              <div className="flex items-center justify-between gap-4"><div><p className="text-sm font-medium">New designs</p><p className="text-xs text-muted-foreground">Use the logo in new flyers, letterheads and templates wherever a logo placeholder exists.</p></div><Switch checked={form.logoApplyToNewDesigns !== false} onCheckedChange={(v) => set('logoApplyToNewDesigns', v)} /></div>
+              <div className="flex items-center justify-between gap-4"><div><p className="text-sm font-medium">Refresh existing saved designs</p><p className="text-xs text-muted-foreground">Update only marked logo placeholders and save revisions. Custom logo art is preserved.</p></div><Switch checked={applyExistingSaved} onCheckedChange={setApplyExistingSaved} /></div>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button className="bg-[#1F2A44] hover:bg-[#2a3a5c]" onClick={() => void save(false)} disabled={saving}>{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />} Commit selected changes</Button>
+              <Button variant="outline" onClick={() => void save(true)} disabled={saving || !form.logoProjectId}>Apply official logo everywhere</Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -239,8 +318,8 @@ export function BrandSettingsView() {
 
       <div className="flex justify-end gap-2 pb-4">
         <Button variant="outline" onClick={() => setForm(brand)}>Reset changes</Button>
-        <Button className="gap-2 bg-[#1F2A44] hover:bg-[#2a3a5c]" onClick={() => void save()} disabled={saving}>
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save settings
+        <Button className="gap-2 bg-[#1F2A44] hover:bg-[#2a3a5c]" onClick={() => void save(false)} disabled={saving}>
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Commit changes
         </Button>
       </div>
     </div>
