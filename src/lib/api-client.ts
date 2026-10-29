@@ -278,4 +278,9 @@ export const aiApi = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  removeBackground: (body: { image: string }) =>
+    request<{ dataUrl: string; width: number; height: number; transparencyApplied: boolean }>('/api/ai/remove-background', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 }
