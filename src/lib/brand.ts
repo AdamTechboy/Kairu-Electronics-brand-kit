@@ -33,6 +33,8 @@ export interface BrandSettings {
   openingHours: string
   extraInfo: string
   logoProjectId: string | null
+  logoApplyToSite: boolean
+  logoApplyToNewDesigns: boolean
   palette: BrandPalette
   typography: BrandTypography
 }
@@ -67,6 +69,8 @@ export const DEFAULT_BRAND: BrandSettings = {
   openingHours: '',
   extraInfo: '',
   logoProjectId: null,
+  logoApplyToSite: true,
+  logoApplyToNewDesigns: true,
   palette: DEFAULT_PALETTE,
   typography: DEFAULT_TYPOGRAPHY,
 }
