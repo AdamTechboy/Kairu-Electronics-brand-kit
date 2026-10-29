@@ -2,7 +2,7 @@
 
 // Product Library: reusable catalogue used by the flyer generator.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../app-context'
 import { productApi, assetApi } from '@/lib/api-client'
 import type { Product } from '@/lib/api-client'
@@ -80,6 +80,7 @@ export function ProductLibraryView() {
   const [products, setProducts] = useState<Product[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
+  const [sortBy, setSortBy] = useState('recent')
   const [importingCsv, setImportingCsv] = useState(false)
   const [loading, setLoading] = useState(true)
   const [dialog, setDialog] = useState(false)
@@ -120,11 +121,19 @@ export function ProductLibraryView() {
 
   const productCategories = [...new Set(products.map((p) => p.category).filter(Boolean))].sort((a, b) => a.localeCompare(b))
   const normalizedQuery = searchQuery.trim().toLocaleLowerCase()
-  const filteredProducts = products.filter((p) => {
+  const filteredProducts = useMemo(() => products.filter((p) => {
     const matchesCategory = categoryFilter === 'all' || p.category === categoryFilter
     const matchesQuery = !normalizedQuery || [p.name, p.category, p.description, p.stockRef].some((value) => value.toLocaleLowerCase().includes(normalizedQuery))
     return matchesCategory && matchesQuery
-  })
+  }).sort((a, b) => {
+    if (sortBy === 'name') return a.name.localeCompare(b.name)
+    if (sortBy === 'price-low' || sortBy === 'price-high') {
+      const price = (value: string) => Number(value.replace(/[^\\d.]/g, '')) || 0
+      return sortBy === 'price-low' ? price(a.price) - price(b.price) : price(b.price) - price(a.price)
+    }
+    if (sortBy === 'availability') return a.availability.localeCompare(b.availability) || a.name.localeCompare(b.name)
+    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  }), [products, categoryFilter, normalizedQuery, sortBy])
 
   const openNew = () => { setDraft(EMPTY); setDialog(true) }
   const openEdit = (p: Product) => {
@@ -317,7 +326,7 @@ export function ProductLibraryView() {
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px]">
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_190px_190px]">
             <Input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -329,6 +338,16 @@ export function ProductLibraryView() {
               <SelectContent>
                 <SelectItem value="all">All categories</SelectItem>
                 {productCategories.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={sortBy} onValueChange={setSortBy}>
+              <SelectTrigger aria-label="Sort products"><SelectValue placeholder="Sort products" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="recent">Recently updated</SelectItem>
+                <SelectItem value="name">Name: A–Z</SelectItem>
+                <SelectItem value="price-low">Price: low to high</SelectItem>
+                <SelectItem value="price-high">Price: high to low</SelectItem>
+                <SelectItem value="availability">Availability</SelectItem>
               </SelectContent>
             </Select>
           </div>
