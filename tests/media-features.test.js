@@ -99,3 +99,35 @@ describe('flyer image layout and SVG image references', () => {
     expect(svg).not.toContain('x=1&y=2')
   })
 })
+
+describe('custom printable documents and selective official-logo replacement', () => {
+  test('builds a multi-page custom document with the owner-provided title, text and signature', () => {
+    const body = Array.from({ length: 90 }, (_, i) => `Custom paragraph line ${i + 1} with printable business information.`).join('\\n')
+    const doc = buildBusinessDocument({
+      kind: 'custom', documentNumber: 'DOC-20261029-001', issueDate: '2026-10-29', dueDate: '',
+      customerName: '', customerPhone: '', customerEmail: '', customerAddress: '', destinationCityState: '',
+      subject: 'Important business notice', body, items: [], discount: '', tax: '', deliveryFee: '', amountPaid: '',
+      paymentMethod: '', deliveryMethod: '', shippingReference: '', notes: '', signerName: 'Owner', footerNote: 'Official notice',
+    }, DEFAULT_BRAND, null)
+    expect(doc.pages.length).toBeGreaterThan(1)
+    const names = doc.pages.flatMap((page) => page.elements.map((element) => element.name || ''))
+    expect(names).toContain('Document title')
+    expect(names).toContain('Document signature')
+    expect(doc.meta.notes).toContain('Custom Document')
+  })
+
+  test('updates only explicit logo placeholders and leaves other artwork unchanged', async () => {
+    const { fillLogoPlaceholders } = await import('../src/lib/design/logo-resolver')
+    const original = {
+      version: 1, width: 100, height: 100, background: null,
+      pages: [{ id: 'p', name: 'p', background: null, elements: [
+        { id: 'marked', type: 'image', name: 'Logo placeholder', meta: { placeholder: 'logo' }, src: 'data:image/png;base64,b2xk', x: 0, y: 0, w: 20, h: 20 },
+        { id: 'photo', type: 'image', name: 'Product photo', src: 'data:image/png;base64,cGhvdG8=', x: 20, y: 0, w: 20, h: 20 },
+      ] }],
+    }
+    const replaced = fillLogoPlaceholders(original, 'data:image/png;base64,bmV3', true)
+    expect(replaced.pages[0].elements[0].src).toBe('data:image/png;base64,bmV3')
+    expect(replaced.pages[0].elements[1].src).toBe('data:image/png;base64,cGhvdG8=')
+    expect(fillLogoPlaceholders(original, 'data:image/png;base64,bmV3', false)).toBe(original)
+  })
+})
