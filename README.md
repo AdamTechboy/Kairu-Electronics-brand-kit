@@ -28,7 +28,7 @@ A single-tenant brand kit and design studio for **Muhammad Kairu Electronics** (
 | Language | TypeScript 5 |
 | UI | React 19, Tailwind CSS 4, shadcn/ui (Radix primitives), lucide-react, framer-motion |
 | State / data fetching | zustand, @tanstack/react-query |
-| Database | SQLite via Prisma 6 (`db/custom.db`) |
+| Database | PostgreSQL via Prisma 6 (Prisma Postgres on Vercel) |
 | Auth | Custom JWT sessions (jose, HS256) + bcryptjs — httpOnly cookie **and** `Authorization: Bearer` fallback (works in embedded frames / cookie-blocking browsers), 30-day sliding expiry, per-IP login rate limiting |
 | Design engine | Custom SVG-string renderer (`src/lib/design/svg.ts`) — single renderer for editor, thumbnails and all exports |
 | Exports | jsPDF + svg2pdf.js (vector PDF), canvas raster (PNG/JPG), JSZip (brand kit), qrcode (QR elements), browser print |
@@ -48,8 +48,8 @@ bun install
 cp .env.example .env
 #    then edit .env (see "Environment variables" below)
 
-# 3. Create/push the SQLite schema
-bun run db:push
+# 3. Apply committed PostgreSQL migrations
+bun run db:migrate:deploy
 
 # 4. Run the dev server
 bun run dev          # http://localhost:3000 (logs are tee'd to dev.log)
@@ -61,12 +61,12 @@ bun run dev          # http://localhost:3000 (logs are tee'd to dev.log)
 
 | Variable | Required | Default / fallback | Purpose |
 | --- | --- | --- | --- |
-| `DATABASE_URL` | Yes | — | Prisma connection string. SQLite for local dev: `file:./db/custom.db` |
-| `AUTH_SECRET` | Recommended | Auto-generated file at `db/.auth-secret` (0600 permissions) | Secret used to sign session JWTs. Use **32+ random characters**, e.g. `openssl rand -hex 32`. If unset, a 32-byte secret is generated once and stored in `db/.auth-secret` |
+| `DATABASE_URL` | Yes | — | PostgreSQL connection string from Prisma Postgres or your PostgreSQL provider |
+| `AUTH_SECRET` | **Required in production** | None in production; development can use `db/.auth-secret` | Stable secret used to sign session JWTs. Set a random value of 32+ characters, e.g. `openssl rand -hex 32`. |
 | `NODE_ENV` | Auto | `development` / `production` | Set by the scripts; in production the session cookie gets the `secure` flag |
 | `PORT` | No | `3000` | Port used by the production standalone server (`bun run start`) |
 
-> **Path note:** Prisma resolves *relative* SQLite paths against the location of `prisma/schema.prisma`. If the database file ends up in the wrong place, use an absolute path (e.g. `DATABASE_URL=file:/home/z/my-project/db/custom.db`), which is what this deployment's `.env` does.
+Production uses PostgreSQL, not a file-backed SQLite database. On Vercel, connect the Prisma Postgres integration and ensure `DATABASE_URL` is available in Production and Preview. Set `AUTH_SECRET` as a sensitive environment variable in every environment, then redeploy. Never commit either secret.
 
 See `.env.example` for a commented template.
 
@@ -78,8 +78,10 @@ See `.env.example` for a commented template.
 | `bun run build` | `next build` → standalone output; copies `.next/static` and `public/` into `.next/standalone/` |
 | `bun run start` | `NODE_ENV=production bun .next/standalone/server.js` (honours `PORT`), output tee'd to `server.log` |
 | `bun run lint` | ESLint over the repository |
-| `bun run db:push` | `prisma db push --accept-data-loss` — pushes `prisma/schema.prisma` to SQLite |
+| `bun run db:push` | Development-only convenience command; **do not use for production schema changes** |
 | `bun run db:generate` | Regenerate the Prisma client |
+| `bun run db:migrate:deploy` | Apply committed PostgreSQL migrations to the configured database |
+| `bun run vercel-build` | Apply migrations, then build the app (Vercel build command) |
 
 ## API Overview
 
@@ -105,13 +107,13 @@ All endpoints require a session except `/api/health` and the auth entry points.
 | `/api/ai/image` | POST | AI image generation (raster PNG, multiple aspect ratios) |
 | `/api/ai/edit-image` | POST | AI edit of a reference image (returns raster proposal) |
 
-## Data Model (Prisma / SQLite)
+## Data Model (Prisma / PostgreSQL)
 
 - **User** — owner account (bcrypt password hash, role). Single-business deployment; the schema can accommodate more users later.
 - **BrandSettings** — one-per-user persistent business profile + palette/typography + official logo reference.
 - **DesignProject** — `doc` holds the editable **DesignDocument JSON** (source of truth), plus preview thumbnail, template flag, archive flag.
 - **ProjectVersion** — snapshot of `doc` for revision history and restore.
-- **Asset** — uploaded images stored as **data-urls inside SQLite** (with kind, size, dimensions).
+- **Asset** — uploaded images stored as data-urls in PostgreSQL (with kind, size, dimensions).
 - **Product** — catalogue items (price kept as a string to allow `₦` formatting).
 - **ExportRecord** — metadata history of every export (files themselves download straight to the browser; nothing is stored server-side).
 
@@ -124,13 +126,9 @@ bun run build       # produces a self-contained .next/standalone/
 bun run start       # NODE_ENV=production, honours PORT (default 3000), logs to server.log
 ```
 
-On the server, before the first start, make sure the environment is configured and the schema exists:
+For Vercel, the `vercel-build` script runs `prisma migrate deploy` before the production build. The committed migrations create the PostgreSQL schema. For a manual deployment, run `bun run db:migrate:deploy` with the correct `DATABASE_URL` before starting the app.
 
-```bash
-bun run db:push
-```
-
-Set `AUTH_SECRET` explicitly in production (32+ random chars) so sessions survive restarts and don't depend on the `db/.auth-secret` fallback file.
+Set `AUTH_SECRET` explicitly in every production environment (32+ random characters). Production authentication intentionally fails closed when this secret is missing; it will not generate a per-instance file secret.
 
 ### Reverse proxy (TLS)
 
