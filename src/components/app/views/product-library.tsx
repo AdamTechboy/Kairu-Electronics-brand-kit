@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
-import { Package, Plus, Pencil, Trash2, Upload, Loader2 } from 'lucide-react'
+import { Package, Plus, Pencil, Trash2, Upload, Loader2, X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface DraftProduct {
@@ -78,22 +78,46 @@ export function ProductLibraryView() {
 
   const handleImage = async (files: FileList | null) => {
     if (!files?.length) return
+    const chosen = Array.from(files).slice(0, Math.max(0, 6 - draft.imageAssetIds.length))
+    if (!chosen.length) {
+      toast.error('A product can have up to 6 photos. Remove one before adding more.')
+      return
+    }
     try {
-      const c = await compressImageFile(files[0], 1200)
-      const { asset } = await assetApi.upload({
-        filename: files[0].name,
-        mimeType: c.mimeType,
-        dataUrl: c.dataUrl,
-        kind: 'product',
-        width: c.width,
-        height: c.height,
-      })
-      setDraft((d) => ({ ...d, imageAssetIds: [asset.id, ...d.imageAssetIds].slice(0, 6) }))
-      setImgUrls((m) => ({ ...m, [asset.id]: c.dataUrl }))
-      toast.success('Image attached to the product.')
+      const uploaded: { id: string; dataUrl: string }[] = []
+      for (const file of chosen) {
+        const compressed = await compressImageFile(file, 1200)
+        const { asset } = await assetApi.upload({
+          filename: file.name,
+          mimeType: compressed.mimeType,
+          dataUrl: compressed.dataUrl,
+          kind: 'product',
+          width: compressed.width,
+          height: compressed.height,
+        })
+        uploaded.push({ id: asset.id, dataUrl: compressed.dataUrl })
+      }
+      setDraft((d) => ({ ...d, imageAssetIds: [...d.imageAssetIds, ...uploaded.map((x) => x.id)].slice(0, 6) }))
+      setImgUrls((m) => ({ ...m, ...Object.fromEntries(uploaded.map((x) => [x.id, x.dataUrl])) }))
+      toast.success(`${uploaded.length} photo${uploaded.length === 1 ? '' : 's'} attached to the product.`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Upload failed')
     }
+  }
+
+  const movePhoto = (index: number, direction: -1 | 1) => {
+    setDraft((d) => {
+      const next = [...d.imageAssetIds]
+      const target = index + direction
+      if (target < 0 || target >= next.length) return d
+      ;[next[index], next[target]] = [next[target], next[index]]
+      return { ...d, imageAssetIds: next }
+    })
+  }
+
+  const removePhoto = (id: string) => {
+    // Remove only the reference from this product; the asset may be used elsewhere.
+    setDraft((d) => ({ ...d, imageAssetIds: d.imageAssetIds.filter((photoId) => photoId !== id) }))
   }
 
   const save = async () => {
@@ -139,10 +163,13 @@ export function ProductLibraryView() {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {products.map((p) => (
             <div key={p.id} className="flex gap-3 rounded-xl border bg-background p-3">
-              <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
-                {p.imageAssetIds[0] && imgUrls[p.imageAssetIds[0]]
-                  ? <img src={imgUrls[p.imageAssetIds[0]]} alt={p.name} className="h-full w-full object-cover" />
-                  : <Package className="h-7 w-7 text-muted-foreground/50" />}
+              <div className="flex w-20 shrink-0 flex-col gap-1">
+                <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-lg bg-muted">
+                  {p.imageAssetIds[0] && imgUrls[p.imageAssetIds[0]]
+                    ? <img src={imgUrls[p.imageAssetIds[0]]} alt={p.name} className="h-full w-full object-contain" />
+                    : <Package className="h-7 w-7 text-muted-foreground/50" />}
+                </div>
+                {p.imageAssetIds.length > 1 && <p className="text-center text-[10px] text-muted-foreground">+{p.imageAssetIds.length - 1} more photo{p.imageAssetIds.length === 2 ? '' : 's'}</p>}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-start justify-between gap-2">
@@ -209,17 +236,32 @@ export function ProductLibraryView() {
               <Label>Notes (optional)</Label>
               <Textarea rows={2} value={draft.notes} onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value }))} placeholder="Internal notes — never printed" />
             </div>
-            <div className="space-y-1.5">
-              <Label>Photo</Label>
-              <div className="flex items-center gap-3">
-                <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-lg border bg-muted">
-                  {draft.imageAssetIds[0] && imgUrls[draft.imageAssetIds[0]]
-                    ? <img src={imgUrls[draft.imageAssetIds[0]]} alt="Product" className="h-full w-full object-cover" />
-                    : <Package className="h-6 w-6 text-muted-foreground/50" />}
-                </div>
-                <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={(e) => { void handleImage(e.target.files); e.currentTarget.value = '' }} />
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => fileRef.current?.click()}><Upload className="h-3.5 w-3.5" /> Upload photo</Button>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <Label>Product photos ({draft.imageAssetIds.length}/6)</Label>
+                <Button variant="outline" size="sm" className="gap-1.5" disabled={draft.imageAssetIds.length >= 6} onClick={() => fileRef.current?.click()}><Upload className="h-3.5 w-3.5" /> Add photos</Button>
               </div>
+              <p className="text-xs text-muted-foreground">The first photo is the primary image. Use the arrows to reorder photos. Removing a photo only detaches it from this product.</p>
+              <input ref={fileRef} type="file" multiple accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={(e) => { void handleImage(e.target.files); e.currentTarget.value = '' }} />
+              {draft.imageAssetIds.length ? (
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+                  {draft.imageAssetIds.map((id, index) => (
+                    <div key={id} className="relative rounded-lg border p-1">
+                      <div className="flex aspect-square items-center justify-center overflow-hidden rounded bg-muted">
+                        {imgUrls[id] ? <img src={imgUrls[id]} alt={`Product photo ${index + 1}`} className="h-full w-full object-contain" /> : <Package className="h-5 w-5 text-muted-foreground/50" />}
+                      </div>
+                      <div className="mt-1 flex items-center justify-between gap-1">
+                        <Button type="button" variant="ghost" size="icon" className="h-6 w-6" aria-label="Move photo left" disabled={index === 0} onClick={() => movePhoto(index, -1)}><ChevronLeft className="h-3.5 w-3.5" /></Button>
+                        <span className="text-[10px] text-muted-foreground">{index === 0 ? 'Primary' : index + 1}</span>
+                        <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-destructive" aria-label="Remove photo" onClick={() => removePhoto(id)}><X className="h-3.5 w-3.5" /></Button>
+                        <Button type="button" variant="ghost" size="icon" className="h-6 w-6" aria-label="Move photo right" disabled={index === draft.imageAssetIds.length - 1} onClick={() => movePhoto(index, 1)}><ChevronRight className="h-3.5 w-3.5" /></Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 rounded-lg border border-dashed p-4 text-sm text-muted-foreground"><Package className="h-6 w-6" /> No photos added yet.</div>
+              )}
             </div>
             <Button className="w-full bg-[#1F2A44] hover:bg-[#2a3a5c]" onClick={() => void save()} disabled={saving}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null} {draft.id ? 'Save changes' : 'Add product'}
