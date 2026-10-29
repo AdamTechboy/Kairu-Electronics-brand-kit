@@ -117,7 +117,7 @@ export function LogoStudioView() {
         <div>
           <h1 className="text-2xl font-bold">Logo Studio</h1>
           <p className="max-w-xl text-sm text-muted-foreground">
-            Your reference badge — sun, solar panel, product silhouettes and bold MK — recreated as fully editable vectors. Change colours, text, sizes; the solar panel keeps its original position.
+            Create an editable logo from a template, or import the business’s actual logo as a transformable image layer. Change colours and add separate text and vector shapes.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
