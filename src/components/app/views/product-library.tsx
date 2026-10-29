@@ -37,6 +37,8 @@ const EMPTY: DraftProduct = { name: '', category: 'Other Electronics', descripti
 export function ProductLibraryView() {
   const { brand } = useApp()
   const [products, setProducts] = useState<Product[]>([])
+  const [searchQuery, setSearchQuery] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('all')
   const [loading, setLoading] = useState(true)
   const [dialog, setDialog] = useState(false)
   const [draft, setDraft] = useState<DraftProduct>(EMPTY)
@@ -72,6 +74,14 @@ export function ProductLibraryView() {
   }, [])
 
   useEffect(() => { void load() }, [load])
+
+  const productCategories = [...new Set(products.map((p) => p.category).filter(Boolean))].sort((a, b) => a.localeCompare(b))
+  const normalizedQuery = searchQuery.trim().toLocaleLowerCase()
+  const filteredProducts = products.filter((p) => {
+    const matchesCategory = categoryFilter === 'all' || p.category === categoryFilter
+    const matchesQuery = !normalizedQuery || [p.name, p.category, p.description, p.stockRef].some((value) => value.toLocaleLowerCase().includes(normalizedQuery))
+    return matchesCategory && matchesQuery
+  })
 
   const openNew = () => { setDraft(EMPTY); setDialog(true) }
   const openEdit = (p: Product) => {
@@ -178,8 +188,31 @@ export function ProductLibraryView() {
           <Button className="mt-4 bg-[#1F2A44] hover:bg-[#2a3a5c]" onClick={openNew}>Add your first product</Button>
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {products.map((p) => (
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px]">
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search products, categories, descriptions or SKU…"
+              aria-label="Search products"
+            />
+            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+              <SelectTrigger aria-label="Filter products by category"><SelectValue placeholder="All categories" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All categories</SelectItem>
+                {productCategories.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          {filteredProducts.length === 0 ? (
+            <div className="rounded-xl border border-dashed p-8 text-center">
+              <p className="font-medium">No matching products</p>
+              <p className="mt-1 text-sm text-muted-foreground">Try a different search or category.</p>
+              <Button variant="outline" size="sm" className="mt-3" onClick={() => { setSearchQuery(''); setCategoryFilter('all') }}>Clear filters</Button>
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {filteredProducts.map((p) => (
             <div key={p.id} className="flex gap-3 rounded-xl border bg-background p-3">
               <div className="flex w-20 shrink-0 flex-col gap-1">
                 <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-lg bg-muted">
@@ -207,7 +240,9 @@ export function ProductLibraryView() {
                 {p.description && <p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">{p.description}</p>}
               </div>
             </div>
-          ))}
+              ))}
+            </div>
+          )}
         </div>
       )}
 
