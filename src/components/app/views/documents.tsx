@@ -18,7 +18,7 @@ import { projectApi } from '@/lib/api-client'
 const today = new Date().toISOString().slice(0, 10)
 
 function freshDocument(kind: BusinessDocumentKind): BusinessDocumentInput {
-  const prefix: Record<BusinessDocumentKind, string> = { letter: 'LTR', invoice: 'INV', receipt: 'RCT', quotation: 'QUO', 'delivery-note': 'DN' }
+  const prefix: Record<BusinessDocumentKind, string> = { letter: 'LTR', custom: 'DOC', invoice: 'INV', receipt: 'RCT', quotation: 'QUO', 'delivery-note': 'DN' }
   return {
     kind, documentNumber: `${prefix[kind]}-${today.replace(/-/g, '')}-001`, issueDate: today, dueDate: '',
     customerName: '', customerPhone: '', customerEmail: '', customerAddress: '', destinationCityState: '',
@@ -37,7 +37,7 @@ export function DocumentsView() {
   const set = <K extends keyof BusinessDocumentInput>(key: K, value: BusinessDocumentInput[K]) => setForm((current) => ({ ...current, [key]: value }))
   const setItem = (index: number, patch: Partial<BusinessDocumentItem>) => set('items', form.items.map((item, i) => i === index ? { ...item, ...patch } : item))
   const totals = useMemo(() => calculateBusinessDocumentTotals(form), [form])
-  const isLetter = form.kind === 'letter'
+  const isLetter = form.kind === 'letter' || form.kind === 'custom'
   const isDelivery = form.kind === 'delivery-note'
   const money = (value: number) => value.toLocaleString('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 2 })
 
