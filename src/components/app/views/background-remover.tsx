@@ -61,7 +61,7 @@ export function BackgroundRemoverView() {
     }
   }
 
-  const useInEditor = async () => {
+  const applyToEditor = async () => {
     if (!result) return
     setLoading(true)
     try {
@@ -137,7 +137,7 @@ export function BackgroundRemoverView() {
       <div className="flex flex-wrap gap-2">
         <Button className="gap-2 bg-[#1F2A44] hover:bg-[#2a3a5c]" onClick={() => void removeBackground()} disabled={!original || loading}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eraser className="h-4 w-4" />} Remove background</Button>
         <Button variant="outline" className="gap-2" onClick={() => result && saveDataUrl(result.dataUrl, `${fileName || 'image'}-transparent.png`)} disabled={!result || loading}><Download className="h-4 w-4" /> Download transparent PNG</Button>
-        <Button variant="outline" className="gap-2" onClick={() => void useInEditor()} disabled={!result || loading}><Pencil className="h-4 w-4" /> Use in editor</Button>
+        <Button variant="outline" className="gap-2" onClick={() => void applyToEditor()} disabled={!result || loading}><Pencil className="h-4 w-4" /> Use in editor</Button>
       </div>
     </div>
   )
