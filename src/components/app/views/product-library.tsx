@@ -176,6 +176,19 @@ export function ProductLibraryView() {
     }
   }
 
+  const downloadCsvTemplate = () => {
+    const headers = ['name', 'category', 'description', 'price', 'availability', 'stockRef', 'notes']
+    const example = ['Example product', 'Accessories', 'Short product description', '25000', 'In Stock', 'SKU-001', 'Optional notes']
+    const blob = new Blob(['\\uFEFF' + [headers, example].map((row) => row.map(csvCell).join(',')).join('\\r\\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'kairu-products-import-template.csv'
+    link.click()
+    URL.revokeObjectURL(url)
+    toast.success('CSV template downloaded. Replace the example row with your products.')
+  }
+
   const exportCsv = () => {
     const headers = ['name', 'category', 'description', 'price', 'availability', 'stockRef', 'notes']
     const lines = [
@@ -287,6 +300,7 @@ export function ProductLibraryView() {
           <Button variant="outline" className="gap-2" onClick={() => csvRef.current?.click()} disabled={importingCsv}>
             {importingCsv ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />} Import CSV
           </Button>
+          <Button variant="outline" className="gap-2" onClick={downloadCsvTemplate}><FileDown className="h-4 w-4" /> CSV template</Button>
           <Button variant="outline" className="gap-2" onClick={exportCsv} disabled={products.length === 0}><FileDown className="h-4 w-4" /> Export CSV</Button>
           <Button className="gap-2 bg-[#1F2A44] hover:bg-[#2a3a5c]" onClick={openNew}><Plus className="h-4 w-4" /> Add product</Button>
         </div>
