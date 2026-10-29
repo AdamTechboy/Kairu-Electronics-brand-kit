@@ -11,7 +11,7 @@ import { docToSvg } from '@/lib/design/svg'
 import type { DesignDocument } from '@/lib/design/types'
 import { productApi, assetApi } from '@/lib/api-client'
 import type { Product } from '@/lib/api-client'
-import { compressImageFile, compressImageDataUrl, symbolCategoryFallback } from '@/components/studio/media-utils'
+import { compressImageFile, compressImageDataUrl, symbolCategoryFallback, validateImageDataUrl } from '@/components/studio/media-utils'
 import { ImageCropDialog, type CropResult } from '@/components/studio/image-crop-dialog'
 import { getOfficialLogoDataUrl } from '@/lib/design/logo-resolver'
 import { Button } from '@/components/ui/button'
@@ -82,6 +82,7 @@ export function FlyerWizardView() {
   const [loadingLib, setLoadingLib] = useState(false)
   const [pendingImages, setPendingImages] = useState<{ dataUrl: string; name: string }[]>([])
   const [uploading, setUploading] = useState(false)
+  const [loadingLibraryPhotos, setLoadingLibraryPhotos] = useState(false)
   const [cropTarget, setCropTarget] = useState<{ kind: 'product'; key: string; src: string; name: string } | { kind: 'pending'; index: number; src: string; name: string } | null>(null)
   const [generating, setGenerating] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -128,66 +129,89 @@ export function FlyerWizardView() {
   const loadLibraryImages = async (items: { key: string; ids: string[] }[]) => {
     const withImages = items.filter((i) => i.ids.length > 0)
     if (!withImages.length) return
-    const updates = await Promise.all(
-      withImages.map(async (i) => {
+    setLoadingLibraryPhotos(true)
+    try {
+      const results = await Promise.all(withImages.map(async (item) => {
         try {
-          const { asset } = await assetApi.get(i.ids[0])
-          const compressed = await compressImageDataUrl(asset.data, `flyer-product-${i.key}.png`, 1000, 0.82, 180_000)
-          return { key: i.key, dataUrl: compressed.dataUrl }
-        } catch {
-          return null
+          const { asset } = await assetApi.get(item.ids[0])
+          const compressed = await compressImageDataUrl(asset.data, `flyer-product-${item.key}.webp`, 1000, 0.82, 180_000)
+          await validateImageDataUrl(compressed.dataUrl)
+          return { key: item.key, dataUrl: compressed.dataUrl, error: null as string | null }
+        } catch (err) {
+          return { key: item.key, dataUrl: null, error: err instanceof Error ? err.message : 'could not decode image' }
         }
-      })
-    )
-    const ok = updates.filter((u): u is { key: string; dataUrl: string } => u !== null)
-    if (!ok.length) return
-    setProducts((prev) => prev.map((p) => {
-      const upd = ok.find((u) => u.key === p.key)
-      return upd && !p.imageDataUrl ? { ...p, imageDataUrl: upd.dataUrl } : p
-    }))
+      }))
+      const loaded = results.filter((item): item is { key: string; dataUrl: string; error: null } => !!item.dataUrl)
+      const failed = results.filter((item) => !item.dataUrl)
+      if (loaded.length) {
+        setProducts((prev) => prev.map((product) => {
+          const photo = loaded.find((item) => item.key === product.key)
+          return photo && !product.imageDataUrl ? { ...product, imageDataUrl: photo.dataUrl } : product
+        }))
+      }
+      if (failed.length) {
+        toast.warning(`${failed.length} product photo(s) could not be prepared. Open Product Library and re-upload those photos.`, { duration: 7000 })
+      }
+    } finally {
+      setLoadingLibraryPhotos(false)
+    }
   }
 
   const loadLibraryImage = async (prodKey: string, assetIds: string[]) => {
     if (!assetIds.length) return
+    setLoadingLibraryPhotos(true)
     try {
       const { asset } = await assetApi.get(assetIds[0])
-      const compressed = await compressImageDataUrl(asset.data, `flyer-product-${prodKey}.png`, 1000, 0.82, 180_000)
+      const compressed = await compressImageDataUrl(asset.data, `flyer-product-${prodKey}.webp`, 1000, 0.82, 180_000)
+      await validateImageDataUrl(compressed.dataUrl)
       setProducts((prev) => prev.map((p) => (p.key === prodKey ? { ...p, imageDataUrl: compressed.dataUrl } : p)))
-    } catch {
-      toast.error('Could not load the product image')
+    } catch (err) {
+      toast.error(err instanceof Error ? `Could not load product photo: ${err.message}` : 'Could not load the product image')
+    } finally {
+      setLoadingLibraryPhotos(false)
     }
   }
 
   const handleFiles = async (files: FileList | null) => {
-    if (!files?.length) return
+    if (!files?.length || uploading) return
     setUploading(true)
     try {
       const results: { dataUrl: string; name: string }[] = []
+      const failures: string[] = []
       for (const file of Array.from(files).slice(0, 10)) {
-        const c = await compressImageFile(file, 1000, 0.82, 180_000)
-        results.push({ dataUrl: c.dataUrl, name: file.name })
+        try {
+          const compressed = await compressImageFile(file, 1000, 0.82, 180_000)
+          await validateImageDataUrl(compressed.dataUrl)
+          results.push({ dataUrl: compressed.dataUrl, name: file.name })
+        } catch (err) {
+          failures.push(`${file.name}: ${err instanceof Error ? err.message : 'could not decode image'}`)
+        }
       }
-      // Assign to products without a photo first (in order); the rest stay in
-      // the "unassigned" tray for manual assignment below.
+
+      // One problematic file must never discard other successfully prepared photos.
       const assigned = new Map<string, string>()
       const stillPending: { dataUrl: string; name: string }[] = []
-      for (const r of results) {
-        const target = productsRef.current.find((p) => !p.imageDataUrl && !assigned.has(p.key))
-        if (target) assigned.set(target.key, r.dataUrl)
-        else stillPending.push(r)
+      for (const result of results) {
+        const target = productsRef.current.find((product) => !product.imageDataUrl && !assigned.has(product.key))
+        if (target) assigned.set(target.key, result.dataUrl)
+        else stillPending.push(result)
       }
       if (assigned.size) {
-        setProducts((prev) => prev.map((p) => (assigned.has(p.key) ? { ...p, imageDataUrl: assigned.get(p.key) } : p)))
+        setProducts((prev) => prev.map((product) => assigned.has(product.key)
+          ? { ...product, imageDataUrl: assigned.get(product.key) }
+          : product))
       }
-      if (stillPending.length) setPendingImages((pi) => [...pi, ...stillPending])
-      const autoCount = assigned.size
-      toast.success(
-        autoCount > 0
-          ? `${results.length} photo${results.length === 1 ? '' : 's'} processed${autoCount ? ` — ${autoCount} assigned automatically` : ''}.`
-          : `${results.length} unassigned photo${results.length === 1 ? '' : 's'} — assign them to products below.`
-      )
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Upload failed')
+      if (stillPending.length) setPendingImages((prev) => [...prev, ...stillPending])
+
+      if (failures.length) {
+        toast.error(`${results.length} photo(s) prepared; ${failures.length} failed. ${failures.slice(0, 2).join(' | ')}`, { duration: 8000 })
+      } else if (results.length) {
+        toast.success(assigned.size
+          ? `${results.length} photo(s) prepared — ${assigned.size} assigned to products.`
+          : `${results.length} photo(s) ready. Assign them to products or keep them in the gallery.`)
+      } else {
+        toast.error('No usable photos were added. Choose PNG, JPG, WebP or SVG images and try again.')
+      }
     } finally {
       setUploading(false)
     }
@@ -210,19 +234,49 @@ export function FlyerWizardView() {
       setStep(3)
       return
     }
+    if (uploading || loadingLibraryPhotos) {
+      toast.error('Please wait for all product photos to finish processing before generating the flyer.')
+      setStep(4)
+      return
+    }
     setGenerating(true)
     try {
+      // Decode every photo once more before layout. Broken data URLs used to be
+      // carried into the SVG as empty image elements without a useful warning.
+      const photoChecks = await Promise.all([
+        ...products.filter((product) => !!product.imageDataUrl).map(async (product) => ({
+          label: product.name || 'Product photo',
+          ok: await validateImageDataUrl(product.imageDataUrl!).then(() => true).catch(() => false),
+        })),
+        ...pendingImages.map(async (photo) => ({
+          label: photo.name,
+          ok: await validateImageDataUrl(photo.dataUrl).then(() => true).catch(() => false),
+        })),
+      ])
+      const invalid = photoChecks.filter((photo) => !photo.ok)
+      if (invalid.length) {
+        throw new Error(`These photos could not be decoded: ${invalid.map((photo) => photo.label).slice(0, 3).join(', ')}. Remove and upload them again.`)
+      }
+
       // The official logo is baked into the flyer header when shown.
       const logoDataUrl = showLogo ? await getOfficialLogoDataUrl(brand) : null
       if (showLogo && !logoDataUrl) {
-        toast.info('Tip: set an official logo in the Logo Studio and it will appear on your flyers automatically.')
+        toast.info('Tip: set an official logo in Brand Settings and it will appear on your flyers automatically.')
       }
       const preset = CANVAS_PRESETS[formatId]
       const size = custom.w && custom.h
         ? { width: Math.max(200, Math.min(4000, +custom.w)), height: Math.max(200, Math.min(4000, +custom.h)), presetId: formatId }
         : { width: preset.width, height: preset.height, presetId: formatId }
-      // Unassigned photos get their own frames in a photo gallery band.
-      const extraImages = pendingImages.map((p) => p.dataUrl)
+      // Unassigned photos get their own cells in the transparent photo gallery.
+      const extraImages = pendingImages.map((photo) => photo.dataUrl)
+      const sourceProducts = products.map((product) => ({
+        name: product.name || 'Product',
+        description: product.description || undefined,
+        price: product.price ? formatNaira(product.price) : undefined,
+        availability: (product.availability === 'custom' ? product.customAvailability?.trim() : product.availability.trim()) || undefined,
+        imageDataUrl: product.imageDataUrl,
+        symbol: product.symbol,
+      }))
       const { doc, warnings } = await generateFlyerDoc(
         {
           headline: headline.trim(),
@@ -231,14 +285,7 @@ export function FlyerWizardView() {
           description: description.trim() || undefined,
           offer: offer.trim() || undefined,
           cta: cta.trim() || undefined,
-          products: products.map((p) => ({
-            name: p.name || 'Product',
-            description: p.description || undefined,
-            price: p.price ? formatNaira(p.price) : undefined,
-            availability: (p.availability === 'custom' ? p.customAvailability?.trim() : p.availability.trim()) || undefined,
-            imageDataUrl: p.imageDataUrl,
-            symbol: p.symbol,
-          })),
+          products: sourceProducts,
           extraImages,
           style,
           showLogo,
@@ -249,14 +296,22 @@ export function FlyerWizardView() {
         size,
         brand
       )
-      for (const w of warnings) toast.warning(w, { duration: 6000 })
+      const intendedPhotos = sourceProducts.slice(0, 8).filter((product) => product.imageDataUrl).length + extraImages.slice(0, 8).length
+      const renderedPhotos = doc.pages.reduce((count, page) => count + page.elements.filter((element) =>
+        element.type === 'image' && !!element.src && (element.name === 'Photo 1' || element.name === 'Photo 2' ||
+          element.name === 'Photo 3' || / image$/.test(element.name ?? ''))
+      ).length, 0)
+      if (intendedPhotos > 0 && renderedPhotos < intendedPhotos) {
+        throw new Error(`The flyer layout placed ${renderedPhotos} of ${intendedPhotos} selected photos. Please reduce the photo count or remove the failed image and try again.`)
+      }
+      for (const warning of warnings) toast.warning(warning, { duration: 6000 })
       openEditor({
         initialDoc: doc,
         initialName: headline.trim().slice(0, 60) || 'Product flyer',
         initialType: 'flyer',
         backTo: 'flyer',
       })
-      toast.success('Your flyer has been generated — edit anything on the canvas.')
+      toast.success(`${renderedPhotos ? `${renderedPhotos} photo(s) added. ` : ''}Your flyer has been generated — edit anything on the canvas.`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not generate the flyer')
     } finally {
@@ -549,9 +604,9 @@ export function FlyerWizardView() {
           <StylePicker style={style} setStyle={setStyle} />
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
             <Button variant="outline" className="gap-2" onClick={() => setStep(4)}><ArrowLeft className="h-4 w-4" /> Back</Button>
-            <Button className="gap-2 bg-amber-600 hover:bg-amber-700" onClick={() => void generate()} disabled={generating}>
-              {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-              {generating ? 'Generating…' : 'Generate Flyer'}
+            <Button className="gap-2 bg-amber-600 hover:bg-amber-700" onClick={() => void generate()} disabled={generating || uploading || loadingLibraryPhotos}>
+              {generating || uploading || loadingLibraryPhotos ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+              {uploading ? 'Processing photos…' : loadingLibraryPhotos ? 'Loading product photos…' : generating ? 'Generating…' : 'Generate Flyer'}
             </Button>
           </div>
         </section>
