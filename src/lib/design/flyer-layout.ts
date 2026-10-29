@@ -6,7 +6,6 @@
 import type { DesignDocument, DesignElement, ProjectType } from './types'
 import { el, newPage } from './types'
 import { measureTextWidth } from './svg'
-import { cropToAspect } from '@/components/studio/media-utils'
 import type { BrandSettings } from '@/lib/brand'
 
 export type FlyerStyle =
@@ -401,7 +400,7 @@ function composeFlyer(input: FlyerInput, size: { width: number; height: number; 
     }
     frames.forEach((f, i) => {
       els.push(el('rect', { name: `Photo frame ${i + 1}`, x: f.x, y: f.y, w: f.w, h: f.h, radius: S(8), fill: '#FFFFFF', stroke: th.dark ? '#3A4250' : '#DAD5C8', strokeWidth: 1, shadow: { color: '#000000', blur: 10, offsetX: 0, offsetY: 4 } }))
-      els.push(el('image', { name: `Photo ${i + 1}`, src: galleryImages[i], fit: 'cover', x: f.x + inset, y: f.y + inset, w: f.w - inset * 2, h: f.h - inset * 2, radius: S(4) }))
+      els.push(el('image', { name: `Photo ${i + 1}`, src: galleryImages[i], fit: 'contain', x: f.x + inset, y: f.y + inset, w: f.w - inset * 2, h: f.h - inset * 2, radius: S(4) }))
       aspects.gallery[i] = (f.w - inset * 2) / (f.h - inset * 2)
     })
   }
@@ -416,7 +415,7 @@ function composeFlyer(input: FlyerInput, size: { width: number; height: number; 
     els.push(el('rect', { name: 'Product card', x: pad, y: prodAreaTop, w: areaW, h: heroH, radius: S(14), fill: th.cardBg, shadow: { color: '#000000', blur: 18, offsetX: 0, offsetY: 8 } }))
     const imgH = pDef.imageDataUrl ? heroH * 0.62 : heroH * 0.5
     if (pDef.imageDataUrl) {
-      els.push(el('image', { name: `${pDef.name} image`, src: pDef.imageDataUrl, fit: 'cover', x: pad, y: prodAreaTop, w: areaW, h: imgH, radius: S(14) }))
+      els.push(el('image', { name: `${pDef.name} image`, src: pDef.imageDataUrl, fit: 'contain', x: pad, y: prodAreaTop, w: areaW, h: imgH, radius: S(14) }))
       aspects.products[0] = areaW / imgH
     } else {
       els.push(el('rect', { name: 'Image placeholder', x: pad, y: prodAreaTop, w: areaW, h: imgH, radius: S(14), fill: th.dark ? '#242A34' : '#EEEBE2' }))
@@ -456,7 +455,7 @@ function composeFlyer(input: FlyerInput, size: { width: number; height: number; 
       els.push(el('rect', { name: `${pDef.name} card`, x: cx, y: cy, w: cardW, h: cardH, radius: S(10), fill: th.cardBg, shadow: { color: '#000000', blur: 12, offsetX: 0, offsetY: 5 } }))
       const imgH = pDef.imageDataUrl ? cardH * 0.5 : cardH * 0.42
       if (pDef.imageDataUrl) {
-        els.push(el('image', { name: `${pDef.name} image`, src: pDef.imageDataUrl, fit: 'cover', x: cx, y: cy, w: cardW, h: imgH, radius: S(10) }))
+        els.push(el('image', { name: `${pDef.name} image`, src: pDef.imageDataUrl, fit: 'contain', x: cx, y: cy, w: cardW, h: imgH, radius: S(10) }))
         aspects.products[i] = cardW / imgH
       } else {
         els.push(el('rect', { name: 'Image placeholder', x: cx, y: cy, w: cardW, h: imgH, radius: S(10), fill: th.dark ? '#242A34' : '#EEEBE2' }))
@@ -511,50 +510,17 @@ function composeFlyer(input: FlyerInput, size: { width: number; height: number; 
 }
 
 /**
- * Generate the flyer document. Photos are pre-cropped to the exact frame
- * geometry in a second pass, so each picture fills its frame completely —
- * nothing important disappears and nothing looks squeezed.
+ * Generate the flyer document without destructively cropping uploaded photos.
+ * Product and gallery images use "contain" so the complete source image remains
+ * visible inside its frame. Users can still crop deliberately in the editor.
  */
 export async function generateFlyerDoc(
   input: FlyerInput,
   size: { width: number; height: number; presetId?: string },
   brand: BrandSettings
 ): Promise<FlyerLayoutResult> {
-  const first = composeFlyer(input, size, brand)
-  const products = input.products.map((p) => ({ ...p }))
-  const gallery = [...(input.extraImages ?? [])]
-  let changed = false
-  await Promise.all(
-    products.map(async (p, i) => {
-      const aspect = first.aspects.products[i]
-      if (p.imageDataUrl && aspect) {
-        try {
-          const cropped = await cropToAspect(p.imageDataUrl, aspect)
-          if (cropped !== p.imageDataUrl) {
-            p.imageDataUrl = cropped
-            changed = true
-          }
-        } catch {}
-      }
-    })
-  )
-  await Promise.all(
-    gallery.map(async (src, j) => {
-      const aspect = first.aspects.gallery[j]
-      if (src && aspect) {
-        try {
-          const cropped = await cropToAspect(src, aspect)
-          if (cropped !== src) {
-            gallery[j] = cropped
-            changed = true
-          }
-        } catch {}
-      }
-    })
-  )
-  if (!changed) return { doc: first.doc, warnings: first.warnings }
-  const second = composeFlyer({ ...input, products, extraImages: gallery }, size, brand)
-  return { doc: second.doc, warnings: Array.from(new Set([...first.warnings, ...second.warnings])) }
+  const result = composeFlyer(input, size, brand)
+  return { doc: result.doc, warnings: result.warnings }
 }
 
 /** Synchronous one-shot composer (no image pre-cropping) — for live previews. */
