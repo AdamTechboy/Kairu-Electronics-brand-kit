@@ -140,7 +140,7 @@ export function BrandSettingsView() {
         <div className="flex gap-2">
           <Button variant="outline" className="gap-2" onClick={() => navigate('brand-kit')}><Eye className="h-4 w-4" /> Preview Brand Kit</Button>
           <Button className="gap-2 bg-[#1F2A44] hover:bg-[#2a3a5c]" onClick={() => void save()} disabled={saving}>
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save settings
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Commit changes
           </Button>
         </div>
       </div>
