@@ -163,7 +163,7 @@ describe('flyer photo assignment regression', () => {
     }, { width: 794, height: 1123, presetId: 'a4-portrait' }, DEFAULT_BRAND)
 
     const images = result.doc.pages.flatMap((page) => page.elements.filter((element) =>
-      element.type === 'image' && /^Photo \\d+$/.test(element.name ?? '')
+      element.type === 'image' && /^Photo \d+$/.test(element.name ?? '')
     ))
     expect(images).toHaveLength(5)
     expect(images.map((element) => element.src)).toEqual(photos)
