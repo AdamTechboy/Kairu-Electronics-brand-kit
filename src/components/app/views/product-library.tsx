@@ -7,6 +7,7 @@ import { useApp } from '../app-context'
 import { productApi, assetApi } from '@/lib/api-client'
 import type { Product } from '@/lib/api-client'
 import { compressImageFile } from '@/components/studio/media-utils'
+import { ImageCropDialog, type CropResult } from '@/components/studio/image-crop-dialog'
 import { AVAILABILITY_OPTIONS, PRODUCT_CATEGORIES, formatNaira } from '@/lib/brand'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
-import { Package, Plus, Pencil, Trash2, Upload, Loader2, X, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Package, Plus, Pencil, Trash2, Upload, Loader2, X, ChevronLeft, ChevronRight, Crop } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface DraftProduct {
@@ -42,6 +43,7 @@ export function ProductLibraryView() {
   const [saving, setSaving] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<Product | null>(null)
   const [imgUrls, setImgUrls] = useState<Record<string, string>>({})
+  const [cropTarget, setCropTarget] = useState<{ id: string; index: number; src: string } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
@@ -256,6 +258,7 @@ export function ProductLibraryView() {
                         <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-destructive" aria-label="Remove photo" onClick={() => removePhoto(id)}><X className="h-3.5 w-3.5" /></Button>
                         <Button type="button" variant="ghost" size="icon" className="h-6 w-6" aria-label="Move photo right" disabled={index === draft.imageAssetIds.length - 1} onClick={() => movePhoto(index, 1)}><ChevronRight className="h-3.5 w-3.5" /></Button>
                       </div>
+                      {imgUrls[id] && <Button type="button" variant="outline" size="sm" className="mt-1 h-7 w-full gap-1 px-1 text-[11px]" onClick={() => setCropTarget({ id, index, src: imgUrls[id] })}><Crop className="h-3 w-3" /> Crop / rotate</Button>}
                     </div>
                   ))}
                 </div>
@@ -269,6 +272,40 @@ export function ProductLibraryView() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <ImageCropDialog
+        key={cropTarget ? `${cropTarget.id}-${cropTarget.index}` : 'no-crop'}
+        open={!!cropTarget}
+        imageSrc={cropTarget?.src ?? ''}
+        fileName={cropTarget ? `Product photo ${cropTarget.index + 1}` : undefined}
+        frameAspect={null}
+        onCancel={() => setCropTarget(null)}
+        onApply={async (result: CropResult) => {
+          if (!cropTarget) return
+          try {
+            const dataUrl = result.dataUrl
+            const mimeType = dataUrl.startsWith('data:image/png') ? 'image/png' : 'image/jpeg'
+            const { asset } = await assetApi.upload({
+              filename: `product-photo-cropped-${Date.now()}.png`,
+              mimeType,
+              dataUrl,
+              kind: 'product',
+              width: result.width,
+              height: result.height,
+            })
+            setDraft((d) => {
+              const imageAssetIds = [...d.imageAssetIds]
+              if (imageAssetIds[cropTarget.index] === cropTarget.id) imageAssetIds[cropTarget.index] = asset.id
+              return { ...d, imageAssetIds }
+            })
+            setImgUrls((urls) => ({ ...urls, [asset.id]: dataUrl }))
+            setCropTarget(null)
+            toast.success('Cropped photo added. The original asset is preserved.')
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Could not save the cropped photo')
+          }
+        }}
+      />
 
       <AlertDialog open={!!confirmDelete} onOpenChange={(v) => !v && setConfirmDelete(null)}>
         <AlertDialogContent>
