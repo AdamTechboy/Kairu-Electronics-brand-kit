@@ -17,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
-import { Package, Plus, Pencil, Trash2, Upload, Loader2, X, ChevronLeft, ChevronRight, Crop } from 'lucide-react'
+import { Package, Plus, Pencil, Trash2, Upload, Loader2, X, ChevronLeft, ChevronRight, Crop, FileDown, FileUp } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface DraftProduct {
@@ -34,11 +34,53 @@ interface DraftProduct {
 
 const EMPTY: DraftProduct = { name: '', category: 'Other Electronics', description: '', price: '', availability: 'In Stock', stockRef: '', notes: '', imageAssetIds: [] }
 
+
+function parseCsvRows(source: string): string[][] {
+  const rows: string[][] = []
+  let row: string[] = []
+  let field = ''
+  let quoted = false
+  for (let i = 0; i < source.length; i += 1) {
+    const char = source[i]
+    if (quoted) {
+      if (char === '"' && source[i + 1] === '"') {
+        field += '"'
+        i += 1
+      } else if (char === '"') {
+        quoted = false
+      } else {
+        field += char
+      }
+    } else if (char === '"' && field.length === 0) {
+      quoted = true
+    } else if (char === ',') {
+      row.push(field.trim())
+      field = ''
+    } else if (char === '\n' || char === '\r') {
+      if (char === '\r' && source[i + 1] === '\n') i += 1
+      row.push(field.trim())
+      if (row.some((cell) => cell.length > 0)) rows.push(row)
+      row = []
+      field = ''
+    } else {
+      field += char
+    }
+  }
+  row.push(field.trim())
+  if (row.some((cell) => cell.length > 0)) rows.push(row)
+  return rows
+}
+
+function csvCell(value: string): string {
+  return '"' + value.replace(/"/g, '""') + '"'
+}
+
 export function ProductLibraryView() {
   const { brand } = useApp()
   const [products, setProducts] = useState<Product[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
+  const [importingCsv, setImportingCsv] = useState(false)
   const [loading, setLoading] = useState(true)
   const [dialog, setDialog] = useState(false)
   const [draft, setDraft] = useState<DraftProduct>(EMPTY)
@@ -48,6 +90,7 @@ export function ProductLibraryView() {
   const [imgUrls, setImgUrls] = useState<Record<string, string>>({})
   const [cropTarget, setCropTarget] = useState<{ id: string; index: number; src: string } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const csvRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -133,6 +176,70 @@ export function ProductLibraryView() {
     }
   }
 
+  const exportCsv = () => {
+    const headers = ['name', 'category', 'description', 'price', 'availability', 'stockRef', 'notes']
+    const lines = [
+      headers.map(csvCell).join(','),
+      ...products.map((p) => [p.name, p.category, p.description, p.price, p.availability, p.stockRef, p.notes].map(csvCell).join(',')),
+    ]
+    const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'kairu-electronics-products.csv'
+    link.click()
+    URL.revokeObjectURL(url)
+    toast.success('Product catalogue exported to CSV.')
+  }
+
+  const importCsv = async (file: File | undefined) => {
+    if (!file || importingCsv) return
+    setImportingCsv(true)
+    try {
+      const rows = parseCsvRows(await file.text())
+      if (rows.length < 2) throw new Error('The CSV file has no product rows.')
+      const headers = rows[0].map((h) => h.trim().toLowerCase().replace(/[\s-]+/g, ''))
+      const nameIndex = headers.indexOf('name')
+      if (nameIndex < 0) throw new Error('The CSV must include a "name" column.')
+      const value = (row: string[], key: string, fallback = '') => {
+        const index = headers.indexOf(key.toLowerCase().replace(/[\s-]+/g, ''))
+        return index >= 0 ? (row[index] ?? '').trim() : fallback
+      }
+      let imported = 0
+      let failed = 0
+      for (const row of rows.slice(1)) {
+        const name = (row[nameIndex] ?? '').trim()
+        if (!name) {
+          failed += 1
+          continue
+        }
+        try {
+          await productApi.create({
+            name,
+            category: value(row, 'category', 'Other Electronics') || 'Other Electronics',
+            description: value(row, 'description'),
+            price: value(row, 'price').replace(/[^\d.]/g, ''),
+            availability: value(row, 'availability', 'In Stock') || 'In Stock',
+            stockRef: value(row, 'stockRef') || value(row, 'sku'),
+            notes: value(row, 'notes'),
+            imageAssetIds: [],
+          })
+          imported += 1
+        } catch {
+          failed += 1
+        }
+      }
+      await load()
+      if (failed) toast.error(imported + ' product(s) imported; ' + failed + ' row(s) skipped or failed.')
+      else toast.success(imported + ' product(s) imported successfully.')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not import CSV file')
+    } finally {
+      setImportingCsv(false)
+      if (csvRef.current) csvRef.current.value = ''
+    }
+  }
+
   const movePhoto = (index: number, direction: -1 | 1) => {
     setDraft((d) => {
       const next = [...d.imageAssetIds]
@@ -175,7 +282,14 @@ export function ProductLibraryView() {
           <h1 className="flex items-center gap-2 text-2xl font-bold"><Package className="h-6 w-6 text-amber-600" /> Product Library</h1>
           <p className="text-sm text-muted-foreground">Save products once — pick them in any flyer with names, prices and photos filled in.</p>
         </div>
-        <Button className="gap-2 bg-[#1F2A44] hover:bg-[#2a3a5c]" onClick={openNew}><Plus className="h-4 w-4" /> Add product</Button>
+        <div className="flex flex-wrap gap-2">
+          <input ref={csvRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => { void importCsv(e.target.files?.[0]); }} />
+          <Button variant="outline" className="gap-2" onClick={() => csvRef.current?.click()} disabled={importingCsv}>
+            {importingCsv ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />} Import CSV
+          </Button>
+          <Button variant="outline" className="gap-2" onClick={exportCsv} disabled={products.length === 0}><FileDown className="h-4 w-4" /> Export CSV</Button>
+          <Button className="gap-2 bg-[#1F2A44] hover:bg-[#2a3a5c]" onClick={openNew}><Plus className="h-4 w-4" /> Add product</Button>
+        </div>
       </div>
 
       {loading ? (
