@@ -12,7 +12,7 @@
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
     "test": "bun test tests/product-csv.test.js",
-    "vercel-build": "prisma migrate deploy && bun run build",
+    "vercel-build": "if [ \"$VERCEL_ENV\" = \"production\" ]; then prisma migrate deploy; else echo \"Skipping database migrations outside production\"; fi && bun run build",
     "db:migrate:deploy": "prisma migrate deploy"
   },
   "dependencies": {
