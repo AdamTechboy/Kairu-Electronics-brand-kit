@@ -198,19 +198,7 @@ Notes:
 
 ### Persistence & backup
 
-Everything lives in **two files**:
-
-1. **`db/custom.db`** — the entire database: users, brand settings, projects, versions, uploaded assets (as data-urls), products, export history. This is the single source of truth.
-2. **`AUTH_SECRET`** — the session signing secret. Keep it stable and back it up securely; if it is lost or changed, all existing sessions are invalidated (users simply log in again).
-
-Backup while the server is stopped (or use `sqlite3 db/custom.db ".backup 'backup/custom-$(date +%F).db'"` for a live-safe copy):
-
-```bash
-sqlite3 db/custom.db ".backup '/backups/custom-$(date +%F).db'"
-cp db/.auth-secret /backups/.auth-secret.bak
-```
-
-Restore = stop the service, copy both files back, start the service.
+PostgreSQL stores the persistent application data. Back up the database using the provider's supported backup/export tools, and keep `AUTH_SECRET` in a secure password manager or secrets manager. Do not copy a local SQLite file for PostgreSQL deployments. Restoring the database and restoring the same `AUTH_SECRET` preserves both saved data and existing session validity.
 
 ## Testing & QA
 
@@ -277,17 +265,11 @@ Important behaviours:
 - **Port 3000 already in use** — stop the other process (`lsof -i :3000` / `kill <pid>`) or change the `-p 3000` in the `dev` script / set `PORT` for production.
 - **Schema drift / “table does not exist”** — verify `DATABASE_URL` points to the intended PostgreSQL database, then run `bun run db:migrate:deploy` after checking the committed migration history.
 - **Owner cannot sign in on a newly connected database** — the PostgreSQL database starts separately from the Z.ai SQLite database. If no user was migrated, use the first-run registration flow to create the owner account. Do not reset or delete a database to troubleshoot login.
-- **Forgot password** — there is no password-reset flow. Two sqlite-level options:
-  - Update the hash in place (keeps all data):
-    ```bash
-    bun -e "import bcrypt from 'bcryptjs'; console.log(bcrypt.hashSync('new-password', 10))"
-    sqlite3 db/custom.db "UPDATE User SET passwordHash='<hash>' WHERE email='owner@example.com';"
-    ```
-  - Or delete the user row to re-enable first-run registration: `sqlite3 db/custom.db "DELETE FROM User;"` — ⚠️ **all related rows cascade-delete** (brand settings, projects, versions, assets, products, export history).
+- **Forgot password** — there is no password-reset flow. Use your PostgreSQL provider's SQL editor or a trusted local database client to update the owner's `passwordHash` with a bcrypt hash. Do not delete the user row as a login troubleshooting shortcut; related data can be cascade-deleted.
 - **Everyone logged out unexpectedly** — `AUTH_SECRET` changed. Sessions are signed per secret; users can sign in again.
 - **Export dialog warns about PDF fallback** — the vector PDF path failed for this document and a raster page was embedded instead (details in the browser console). Try image mode at a higher DPI, or simplify heavy elements (large embedded images, exotic effects).
 - **AI actions fail** — network/SDK issue on the server side; see `dev.log`/`server.log`. The app remains fully usable without AI.
-- **Thumbnails missing after a manual DB copy** — previews live inside the database as data-urls; copy the whole `db/custom.db`, not just part of it.
+- **Thumbnails missing after a database migration/restore** — previews and uploaded assets are stored in the database as data-urls; verify the full database contents were migrated.
 
 ## Known Limitations
 
