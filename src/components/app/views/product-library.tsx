@@ -117,7 +117,7 @@ export function ProductLibraryView() {
       // Keep successful uploads attached even if a later file in the batch fails.
       for (const file of chosen) {
         try {
-          const compressed = await compressImageFile(file, 1200)
+          const compressed = await compressImageFile(file, 1200, 0.84, 1_000_000)
           const { asset } = await assetApi.upload({
             filename: file.name,
             mimeType: compressed.mimeType,
