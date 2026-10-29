@@ -19,7 +19,7 @@ export async function PUT(req: Request) {
     if (parsed instanceof Response) return parsed
     const existing = await db.brandSettings.findUnique({ where: { userId: user.id } })
     if (!existing) return ok({ brand: null }, 404)
-    const data: Record<string, string | null> = {}
+    const data: Record<string, unknown> = {}
     for (const key of [
       'businessName',
       'businessCategory',
@@ -39,6 +39,8 @@ export async function PUT(req: Request) {
     if (parsed.palette !== undefined) data.palette = JSON.stringify(parsed.palette)
     if (parsed.typography !== undefined) data.typography = JSON.stringify(parsed.typography)
     if (parsed.logoProjectId !== undefined) data.logoProjectId = parsed.logoProjectId
+    if (parsed.logoApplyToSite !== undefined) data.logoApplyToSite = parsed.logoApplyToSite
+    if (parsed.logoApplyToNewDesigns !== undefined) data.logoApplyToNewDesigns = parsed.logoApplyToNewDesigns
     const row = await db.brandSettings.update({ where: { userId: user.id }, data })
     return ok({ brand: parseBrand(row) })
   })
