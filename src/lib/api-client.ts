@@ -151,12 +151,13 @@ export interface ProjectFull extends ProjectSummary {
 }
 
 export const projectApi = {
-  list: (params?: { type?: string; templates?: 'only' | 'exclude'; archived?: boolean; q?: string }) => {
+  list: (params?: { type?: string; templates?: 'only' | 'exclude'; archived?: boolean; q?: string; limit?: number }) => {
     const sp = new URLSearchParams()
     if (params?.type) sp.set('type', params.type)
     if (params?.templates) sp.set('templates', params.templates)
     if (params?.archived) sp.set('archived', 'true')
     if (params?.q) sp.set('q', params.q)
+    if (params?.limit) sp.set('limit', String(params.limit))
     const qs = sp.toString()
     return request<{ projects: ProjectSummary[] }>(`/api/projects${qs ? `?${qs}` : ''}`)
   },
