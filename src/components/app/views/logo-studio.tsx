@@ -2,9 +2,13 @@
 
 // Logo Studio: create/edit logo variants, set the official logo, export wizard.
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../app-context'
-import { projectApi } from '@/lib/api-client'
+import { projectApi, brandApi } from '@/lib/api-client'
+import { compressImageFile } from '@/components/studio/media-utils'
+import { el, newPage, type DesignDocument } from '@/lib/design/types'
+import { makeThumbnail } from '@/lib/export/exporter'
+import { clearOfficialLogoCache, useOfficialLogoDataUrl } from '@/lib/design/logo-resolver'
 import type { ProjectSummary } from '@/lib/api-client'
 import { buildLogoDoc, type LogoVariant } from '@/lib/design/templates'
 import { docToSvg } from '@/lib/design/svg'
@@ -45,6 +49,9 @@ export function LogoStudioView() {
   const [logos, setLogos] = useState<ProjectSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [settingOfficial, setSettingOfficial] = useState<string | null>(null)
+  const [uploadingLogo, setUploadingLogo] = useState(false)
+  const uploadRef = useRef<HTMLInputElement>(null)
+  const officialLogoPreview = useOfficialLogoDataUrl(brand, 'always')
 
   const loadLogos = () => {
     setLoading(true)
@@ -56,6 +63,36 @@ export function LogoStudioView() {
 
   useEffect(loadLogos, [])
 
+  const uploadLogo = async (file: File | undefined) => {
+    if (!file || uploadingLogo) return
+    setUploadingLogo(true)
+    try {
+      const image = await compressImageFile(file, 1400, 0.86, 1_200_000)
+      const doc: DesignDocument = {
+        version: 1, width: 1000, height: 1000, background: null,
+        pages: [{ ...newPage('Uploaded logo', null), elements: [
+          el('image', { name: 'Uploaded logo artwork', src: image.dataUrl, x: 70, y: 70, w: 860, h: 860, fit: 'contain', radius: 0 }),
+        ] }],
+        meta: { type: 'logo', notes: 'Imported logo is a movable, resizable and rotatable image layer. Add editable text and shapes separately.' },
+      }
+      const name = `${brand.businessName || 'Business'} Official Logo`.slice(0, 120)
+      const preview = await makeThumbnail(doc, brand.palette, 420)
+      const { project } = await projectApi.create({ name, type: 'logo', doc, preview })
+      await brandApi.update({ logoProjectId: project.id, logoApplyToSite: true, logoApplyToNewDesigns: true })
+      clearOfficialLogoCache()
+      await reloadBrand()
+      const { projects } = await projectApi.list({ type: 'logo', templates: 'exclude', archived: false })
+      setLogos(projects)
+      toast.success('Uploaded logo is now official. It is still an editable image layer; open the editor to transform it or add separate vector elements.')
+      openEditor({ projectId: project.id, backTo: 'logo-studio' })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not import this logo')
+    } finally {
+      setUploadingLogo(false)
+      if (uploadRef.current) uploadRef.current.value = ''
+    }
+  }
+
   const setOfficial = async (id: string) => {
     setSettingOfficial(id)
     try {
@@ -63,7 +100,7 @@ export function LogoStudioView() {
         import('@/lib/api-client'),
         import('@/lib/design/logo-resolver'),
       ])
-      await brandApi.update({ logoProjectId: id })
+      await brandApi.update({ logoProjectId: id, logoApplyToSite: true, logoApplyToNewDesigns: true })
       clearOfficialLogoCache()
       await reloadBrand()
       toast.success('Official logo updated.')
@@ -83,13 +120,21 @@ export function LogoStudioView() {
             Your reference badge — sun, solar panel, product silhouettes and bold MK — recreated as fully editable vectors. Change colours, text, sizes; the solar panel keeps its original position.
           </p>
         </div>
-        <Button
-          className="gap-2 bg-[#1F2A44] hover:bg-[#2a3a5c]"
-          onClick={() => openEditor({ templateId: 'logo-primary', initialName: 'Primary Logo', initialType: 'logo', backTo: 'logo-studio' })}
-        >
-          <Plus className="h-4 w-4" /> New logo from template
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <input ref={uploadRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={(e) => { void uploadLogo(e.target.files?.[0]) }} />
+          <Button variant="outline" className="gap-2" onClick={() => uploadRef.current?.click()} disabled={uploadingLogo}>{uploadingLogo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Upload your logo</Button>
+          <Button className="gap-2 bg-[#1F2A44] hover:bg-[#2a3a5c]" onClick={() => openEditor({ templateId: 'logo-primary', initialName: 'Primary Logo', initialType: 'logo', backTo: 'logo-studio' })}><Plus className="h-4 w-4" /> New logo from template</Button>
+        </div>
       </div>
+
+      {brand.logoProjectId && (
+        <section className="grid gap-4 rounded-2xl border bg-background p-5 sm:grid-cols-[180px_minmax(0,1fr)] sm:items-center">
+          <div className="flex aspect-square items-center justify-center rounded-xl border border-dashed p-3" style={{ backgroundImage: 'linear-gradient(45deg,#e5e7eb 25%,transparent 25%),linear-gradient(-45deg,#e5e7eb 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e5e7eb 75%),linear-gradient(-45deg,transparent 75%,#e5e7eb 75%)', backgroundSize: '16px 16px', backgroundPosition: '0 0,0 8px,8px -8px,-8px 0' }}>
+            {officialLogoPreview ? <img src={officialLogoPreview} alt="Current official logo" className="max-h-full max-w-full object-contain" /> : <Loader2 className="h-5 w-5 animate-spin" />}
+          </div>
+          <div><Badge className="mb-2 bg-green-100 text-green-800">Current official logo</Badge><h2 className="font-bold">Your business mark</h2><p className="mt-1 text-sm text-muted-foreground">This image is used by the application according to Brand Settings. Open it in the editor to move, resize or rotate the image layer and add separate editable text and vector shapes.</p><Button variant="outline" className="mt-3" onClick={() => openEditor({ projectId: brand.logoProjectId!, backTo: 'logo-studio' })}>Edit official logo</Button></div>
+        </section>
+      )}
 
       {/* guidance */}
       <div className="grid gap-3 md:grid-cols-3">
