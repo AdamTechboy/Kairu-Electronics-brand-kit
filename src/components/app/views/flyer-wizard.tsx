@@ -298,8 +298,7 @@ export function FlyerWizardView() {
       )
       const intendedPhotos = sourceProducts.slice(0, 8).filter((product) => product.imageDataUrl).length + extraImages.slice(0, 8).length
       const renderedPhotos = doc.pages.reduce((count, page) => count + page.elements.filter((element) =>
-        element.type === 'image' && !!element.src && (element.name === 'Photo 1' || element.name === 'Photo 2' ||
-          element.name === 'Photo 3' || / image$/.test(element.name ?? ''))
+        element.type === 'image' && !!element.src && (/^Photo \\d+$/.test(element.name ?? '') || / image$/.test(element.name ?? ''))
       ).length, 0)
       if (intendedPhotos > 0 && renderedPhotos < intendedPhotos) {
         throw new Error(`The flyer layout placed ${renderedPhotos} of ${intendedPhotos} selected photos. Please reduce the photo count or remove the failed image and try again.`)
