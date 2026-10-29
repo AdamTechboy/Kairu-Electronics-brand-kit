@@ -147,3 +147,44 @@ describe('custom printable documents and selective official-logo replacement', (
     expect(info.y).toBeGreaterThan(photo.y)
     expect(page.elements.some((element) => element.name === 'Product card')).toBe(false)
   })
+
+
+describe('flyer photo assignment regression', () => {
+  test('keeps every uploaded gallery photo in the generated flyer document', () => {
+    const photos = Array.from({ length: 5 }, (_, index) => `data:image/webp;base64,cGhvdG8=${index}`)
+    const result = composeFlyerDoc({
+      headline: 'New arrivals',
+      products: [],
+      extraImages: photos,
+      style: 'catalogue',
+      showLogo: false,
+      showAddress: false,
+      showDescription: false,
+    }, { width: 794, height: 1123, presetId: 'a4-portrait' }, DEFAULT_BRAND)
+
+    const images = result.doc.pages.flatMap((page) => page.elements.filter((element) =>
+      element.type === 'image' && /^Photo \d+$/.test(element.name ?? '')
+    ))
+    expect(images).toHaveLength(5)
+    expect(images.map((element) => element.src)).toEqual(photos)
+    const svg = docToSvg(result.doc, { palette: DEFAULT_BRAND.palette })
+    for (const photo of photos) expect(svg).toContain(photo)
+  })
+
+  test('does not discard a product image data URL while composing a single-product flyer', () => {
+    const photo = 'data:image/webp;base64,c29sYXItcGFuZWw='
+    const result = composeFlyerDoc({
+      headline: 'Solar offer',
+      products: [{ name: 'Solar panel', imageDataUrl: photo, price: '₦45,000' }],
+      extraImages: [],
+      style: 'premium',
+      showLogo: false,
+      showAddress: false,
+      showDescription: false,
+    }, { width: 794, height: 1123, presetId: 'a4-portrait' }, DEFAULT_BRAND)
+
+    const image = result.doc.pages.flatMap((page) => page.elements).find((element) => element.name === 'Solar panel image')
+    expect(image?.src).toBe(photo)
+    expect(docToSvg(result.doc, { palette: DEFAULT_BRAND.palette })).toContain(photo)
+  })
+})

@@ -43,7 +43,7 @@ export async function compressImageFile(file: File, maxPx = 1600, quality = 0.86
     return ctx
   }
 
-  let ctx2 = draw(dims.width, dims.height, 'image/png')
+  const ctx2 = draw(dims.width, dims.height, 'image/png')
   if (inspectAlpha && !vectorSource) {
     try {
       const pixels = ctx2.getImageData(0, 0, dims.width, dims.height).data
@@ -51,22 +51,36 @@ export async function compressImageFile(file: File, maxPx = 1600, quality = 0.86
         if (pixels[i] < 255) { hasTransparency = true; break }
       }
     } catch {
-      // Preserve PNG when pixel inspection is blocked; never flatten unknown alpha.
+      // Preserve alpha when pixel inspection is blocked; never flatten unknown transparency.
       hasTransparency = true
     }
   }
-  const outMime = hasTransparency ? 'image/png' : 'image/jpeg'
+
+  // PNG photos with alpha can be much larger than their visual content needs.
+  // WebP keeps transparency while compressing product cutouts much more efficiently.
+  // Keep SVG rasterisations lossless, and use JPEG for opaque photographs.
+  let outMime = vectorSource ? 'image/png' : hasTransparency ? 'image/webp' : 'image/jpeg'
   let q = quality
-  let outUrl = outMime === 'image/png' ? canvas.toDataURL('image/png') : draw(dims.width, dims.height, outMime).canvas.toDataURL('image/jpeg', q)
+  const encode = () => {
+    if (outMime === 'image/png') return canvas.toDataURL('image/png')
+    const encoded = canvas.toDataURL(outMime, q)
+    // Older browsers can silently fall back to PNG for an unsupported WebP encoder.
+    if (outMime === 'image/webp' && !encoded.startsWith('data:image/webp')) {
+      outMime = 'image/png'
+      return canvas.toDataURL('image/png')
+    }
+    return encoded
+  }
+  let outUrl = encode()
 
   while (approxBytes(outUrl) > maxBytes && Math.max(dims.width, dims.height) > 320) {
     dims = { width: Math.max(1, Math.round(dims.width * 0.78)), height: Math.max(1, Math.round(dims.height * 0.78)) }
-    ctx2 = draw(dims.width, dims.height, outMime)
-    q = Math.max(0.42, q - 0.1)
-    outUrl = outMime === 'image/png' ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', q)
+    draw(dims.width, dims.height, outMime)
+    q = Math.max(0.38, q - 0.1)
+    outUrl = encode()
   }
   if (approxBytes(outUrl) > maxBytes) {
-    throw new Error('The image could not be compressed enough for reliable saving. Please choose a smaller image.')
+    throw new Error(`This image is still too large after compression (${Math.round(approxBytes(outUrl) / 1024)} KB). Try a smaller photo or crop it before uploading.`)
   }
   return { dataUrl: outUrl, width: dims.width, height: dims.height, mimeType: outMime, size: approxBytes(outUrl) }
 }
@@ -90,6 +104,18 @@ function readAsDataUrl(file: File): Promise<string> {
     reader.onerror = () => reject(new Error('Could not read the file'))
     reader.readAsDataURL(file)
   })
+}
+
+/** Verify that a stored/uploaded image data URL is decodable before placing it on a design. */
+export async function validateImageDataUrl(dataUrl: string): Promise<{ width: number; height: number }> {
+  if (!/^data:image\/(?:png|jpeg|webp|svg\+xml);base64,/i.test(dataUrl)) {
+    throw new Error('The photo is not a supported PNG, JPG, WebP or SVG image.')
+  }
+  const image = await loadImage(dataUrl)
+  const width = image.naturalWidth || image.width
+  const height = image.naturalHeight || image.height
+  if (!width || !height) throw new Error('The photo decoded without usable dimensions. Please upload it again.')
+  return { width, height }
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {

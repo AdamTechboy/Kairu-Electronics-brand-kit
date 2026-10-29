@@ -63,5 +63,5 @@ jobs:
       - name: Lint
         run: bun run lint
 
-      - name: Production build
-        run: bun run build
+      - name: Vercel production build path (generate client, migrate, build)
+        run: VERCEL_ENV=production bun run vercel-build
