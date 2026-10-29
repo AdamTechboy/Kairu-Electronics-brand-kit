@@ -132,7 +132,7 @@ export function FlyerWizardView() {
       withImages.map(async (i) => {
         try {
           const { asset } = await assetApi.get(i.ids[0])
-          const compressed = await compressImageDataUrl(asset.data, `flyer-product-${i.key}.png`, 1000, 0.82, 300_000)
+          const compressed = await compressImageDataUrl(asset.data, `flyer-product-${i.key}.png`, 1000, 0.82, 180_000)
           return { key: i.key, dataUrl: compressed.dataUrl }
         } catch {
           return null
@@ -151,7 +151,7 @@ export function FlyerWizardView() {
     if (!assetIds.length) return
     try {
       const { asset } = await assetApi.get(assetIds[0])
-      const compressed = await compressImageDataUrl(asset.data, `flyer-product-${prodKey}.png`, 1000, 0.82, 300_000)
+      const compressed = await compressImageDataUrl(asset.data, `flyer-product-${prodKey}.png`, 1000, 0.82, 180_000)
       setProducts((prev) => prev.map((p) => (p.key === prodKey ? { ...p, imageDataUrl: compressed.dataUrl } : p)))
     } catch {
       toast.error('Could not load the product image')
@@ -164,7 +164,7 @@ export function FlyerWizardView() {
     try {
       const results: { dataUrl: string; name: string }[] = []
       for (const file of Array.from(files).slice(0, 10)) {
-        const c = await compressImageFile(file, 1000, 0.82, 300_000)
+        const c = await compressImageFile(file, 1000, 0.82, 180_000)
         results.push({ dataUrl: c.dataUrl, name: file.name })
       }
       // Assign to products without a photo first (in order); the rest stay in
