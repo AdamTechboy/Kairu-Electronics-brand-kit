@@ -128,7 +128,7 @@ export function ProductLibraryView() {
   }).sort((a, b) => {
     if (sortBy === 'name') return a.name.localeCompare(b.name)
     if (sortBy === 'price-low' || sortBy === 'price-high') {
-      const price = (value: string) => Number(value.replace(/[^\\d.]/g, '')) || 0
+      const price = (value: string) => Number(value.replace(/[^\d.]/g, '')) || 0
       return sortBy === 'price-low' ? price(a.price) - price(b.price) : price(b.price) - price(a.price)
     }
     if (sortBy === 'availability') return a.availability.localeCompare(b.availability) || a.name.localeCompare(b.name)
