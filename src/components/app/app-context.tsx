@@ -19,6 +19,8 @@ export type ViewId =
   | 'templates'
   | 'exports'
   | 'account'
+  | 'documents'
+  | 'removebg'
 
 export interface EditorState {
   projectId?: string
@@ -51,7 +53,7 @@ export function useApp(): AppContextValue {
 
 export const VALID_VIEWS: readonly ViewId[] = [
   'dashboard', 'brand-kit', 'brand-settings', 'logo-studio', 'designer', 'flyer',
-  'designs', 'products', 'templates', 'exports', 'account',
+  'designs', 'products', 'templates', 'exports', 'account', 'documents', 'removebg',
 ]
 
 export const VIEW_TITLES: Record<ViewId, string> = {
@@ -66,4 +68,6 @@ export const VIEW_TITLES: Record<ViewId, string> = {
   templates: 'Templates',
   exports: 'Export Centre',
   account: 'Account',
+  documents: 'Documents & Receipts',
+  removebg: 'Background Remover',
 }
