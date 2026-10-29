@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../app-context'
 import { productApi, assetApi } from '@/lib/api-client'
 import type { Product } from '@/lib/api-client'
+import { csvCell, parseCsvRows } from '@/lib/product-csv'
 import { compressImageFile } from '@/components/studio/media-utils'
 import { ImageCropDialog, type CropResult } from '@/components/studio/image-crop-dialog'
 import { AVAILABILITY_OPTIONS, PRODUCT_CATEGORIES, formatNaira } from '@/lib/brand'
@@ -34,46 +35,6 @@ interface DraftProduct {
 
 const EMPTY: DraftProduct = { name: '', category: 'Other Electronics', description: '', price: '', availability: 'In Stock', stockRef: '', notes: '', imageAssetIds: [] }
 
-
-function parseCsvRows(source: string): string[][] {
-  const rows: string[][] = []
-  let row: string[] = []
-  let field = ''
-  let quoted = false
-  for (let i = 0; i < source.length; i += 1) {
-    const char = source[i]
-    if (quoted) {
-      if (char === '"' && source[i + 1] === '"') {
-        field += '"'
-        i += 1
-      } else if (char === '"') {
-        quoted = false
-      } else {
-        field += char
-      }
-    } else if (char === '"' && field.length === 0) {
-      quoted = true
-    } else if (char === ',') {
-      row.push(field.trim())
-      field = ''
-    } else if (char === '\n' || char === '\r') {
-      if (char === '\r' && source[i + 1] === '\n') i += 1
-      row.push(field.trim())
-      if (row.some((cell) => cell.length > 0)) rows.push(row)
-      row = []
-      field = ''
-    } else {
-      field += char
-    }
-  }
-  row.push(field.trim())
-  if (row.some((cell) => cell.length > 0)) rows.push(row)
-  return rows
-}
-
-function csvCell(value: string): string {
-  return '"' + value.replace(/"/g, '""') + '"'
-}
 
 export function ProductLibraryView() {
   const { brand } = useApp()
